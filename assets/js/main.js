@@ -3,10 +3,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const header = document.querySelector('.site-header');
     const toggle = document.querySelector('.nav-toggle');
     if (header && toggle) {
-        toggle.addEventListener('click', () => {
-            const open = header.classList.toggle('nav-open');
+        const setOpen = open => {
+            header.classList.toggle('nav-open', open);
             toggle.setAttribute('aria-expanded', open);
-        });
+        };
+
+        toggle.addEventListener('click', () => setOpen(!header.classList.contains('nav-open')));
+        header.querySelectorAll('.nav-links a').forEach(a => a.addEventListener('click', () => setOpen(false)));
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') setOpen(false); });
+        window.addEventListener('resize', () => { if (window.innerWidth > 768) setOpen(false); });
     }
 
     // Category scroller arrows

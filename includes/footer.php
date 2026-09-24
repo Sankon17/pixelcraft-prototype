@@ -5,22 +5,32 @@
         <div>
             <div class="logo"><span>PixelCraft</span></div>
             <p>Malaysia's custom PC builder. Official partner of Armageddon &amp; TT Racing.</p>
+            <div class="social-links">
+                <?php foreach (store_contacts()['social'] as $name => $url): ?>
+                <a href="<?= e($url) ?>" target="_blank" rel="noopener"><?= e($name) ?></a>
+                <?php endforeach; ?>
+            </div>
         </div>
         <div>
             <h4>Shop</h4>
             <a href="<?= $base ?>pages/pc-categories.php">Custom PCs</a>
-            <a href="<?= $base ?>pages/products.php">All Products</a>
+            <a href="<?= $base ?>pages/products.php">Accessories</a>
             <a href="<?= $base ?>pages/cart.php">Cart</a>
+            <a href="<?= $base ?>pages/ansuran.php">Ansuran</a>
         </div>
         <div>
-            <h4>Partners</h4>
-            <span>Armageddon</span>
-            <span>TT Racing</span>
+            <h4>Visit Us</h4>
+            <span>282, Jalan Bandar Senawang 1,<br>Pusat Bandar Senawang,<br>70450 Seremban, Negeri Sembilan</span>
+            <span>Open daily · Sales 9am–10pm</span>
+            <?php foreach (store_contacts()['whatsapp'] as $wa): ?>
+            <a href="<?= e($wa['url']) ?>" target="_blank" rel="noopener">💬 <?= e($wa['label']) ?>: <?= e($wa['display']) ?></a>
+            <?php endforeach; ?>
+            <a href="<?= $base ?>pages/location.php">Get directions →</a>
         </div>
     </div>
     <p class="copyright">&copy; <?= date('Y') ?> PixelCraft Sdn Bhd (1598691-U). All rights reserved.</p>
 </footer>
 
-<script src="<?= $base ?>assets/js/main.js"></script>
+<script src="<?= asset($base, 'assets/js/main.js') ?>"></script>
 </body>
 </html>

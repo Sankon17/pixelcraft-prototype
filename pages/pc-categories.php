@@ -2,10 +2,12 @@
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
 
+$slugs = array_keys(pc_tiers());
+$placeholders = implode(',', array_fill(0, count($slugs), '?'));
 $stmt = $pdo->prepare("SELECT c.slug, COUNT(p.id) AS product_count, MIN(p.price) AS min_price
     FROM categories c LEFT JOIN products p ON p.category_id = c.id
-    WHERE c.slug IN (?, ?, ?) GROUP BY c.id");
-$stmt->execute(array_keys(pc_tiers()));
+    WHERE c.slug IN ($placeholders) GROUP BY c.id");
+$stmt->execute($slugs);
 $stats = array_column($stmt->fetchAll(), null, 'slug');
 
 $base = '../';
@@ -21,10 +23,13 @@ require '../includes/header.php';
 <section class="section">
     <div class="pc-grid">
         <?php foreach (pc_tiers() as $slug => $tier): ?>
-        <?php $s = $stats[$slug] ?? ['product_count' => 0, 'min_price' => null]; ?>
-        <a href="products.php?category=<?= urlencode($slug) ?>" class="pc-tile pc-<?= e($slug) ?>">
+        <?php
+        $s = $stats[$slug] ?? ['product_count' => 0, 'min_price' => null];
+        $unit = $slug === 'laptops' ? 'model' : 'build';
+        ?>
+        <a href="products.php?type=<?= urlencode($slug) ?>" class="pc-tile pc-<?= e($slug) ?>">
             <span class="pc-icon"><?= category_icon($slug) ?></span>
-            <h3><?= e($tier['title']) ?> PCs</h3>
+            <h3><?= e($tier['name']) ?></h3>
             <p class="pc-tagline"><?= e($tier['tagline']) ?></p>
             <ul>
                 <?php foreach ($tier['uses'] as $use): ?>
@@ -32,10 +37,10 @@ require '../includes/header.php';
                 <?php endforeach; ?>
             </ul>
             <span class="pc-price">
-                <?= $s['min_price'] !== null ? 'From RM ' . number_format($s['min_price'], 2) : 'Builds coming soon' ?>
+                <?= $s['min_price'] !== null ? 'From RM ' . number_format($s['min_price'], 2) : 'Coming soon' ?>
             </span>
-            <span class="pc-count"><?= (int)$s['product_count'] ?> build<?= $s['product_count'] == 1 ? '' : 's' ?> available</span>
-            <span class="btn">View <?= e($tier['title']) ?> PCs</span>
+            <span class="pc-count"><?= (int)$s['product_count'] ?> <?= $unit ?><?= $s['product_count'] == 1 ? '' : 's' ?> available</span>
+            <span class="btn">View <?= e($tier['name']) ?></span>
         </a>
         <?php endforeach; ?>
     </div>

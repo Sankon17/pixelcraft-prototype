@@ -2,9 +2,15 @@
 require_once 'includes/db.php';
 require_once 'includes/functions.php';
 
-$latest = $pdo->query("SELECT p.*, c.name AS category_name, c.slug AS category_slug
-    FROM products p JOIN categories c ON p.category_id = c.id
-    ORDER BY p.created_at DESC, p.id DESC LIMIT 8")->fetchAll();
+// What's New spotlight: the product marked is_featured, otherwise the newest Gaming PC
+$featured = $pdo->query("SELECT p.*, c.name AS category_name, c.slug AS category_slug,
+        s.cpu, s.gpu, s.ram, s.storage
+    FROM products p
+    JOIN categories c ON p.category_id = c.id
+    LEFT JOIN product_specs s ON s.product_id = p.id
+    WHERE p.is_featured = 1 OR c.slug = 'gaming-pcs'
+    ORDER BY p.is_featured DESC, p.created_at DESC, p.id DESC
+    LIMIT 1")->fetch();
 
 $categories = $pdo->query("SELECT c.*, COUNT(p.id) AS product_count, MIN(p.price) AS min_price
     FROM categories c LEFT JOIN products p ON p.category_id = c.id
@@ -30,19 +36,19 @@ require 'includes/header.php';
     <div class="hero-inner">
         <div class="hero-content">
             <div class="hero-badge">Official Partner</div>
-            <h1>Powered by <span class="red">Armageddon</span> &amp; <span class="red">TT Racing</span></h1>
+            <h1>Powered by <span class="hero-brands"><span class="armageddon-yellow">Armageddon</span> &amp; <span class="red">TT Racing</span></span></h1>
             <p>Malaysia's premier custom PC builder, featuring exclusive peripherals and gaming chairs from our brand partners.</p>
             <div class="hero-btns">
                 <a href="pages/pc-categories.php" class="btn">Shop Custom PCs</a>
-                <a href="#categories" class="btn btn-outline">Browse Accessories</a>
+                <a href="pages/products.php" class="btn btn-outline">Browse Accessories</a>
             </div>
         </div>
         <div class="hero-partners">
-            <a href="pages/products.php?category=keyboard" class="partner-card">
+            <a href="pages/products.php?cat=keyboard" class="partner-card">
                 <img src="assets/images/partners/armageddon.png" alt="Armageddon" class="partner-logo-img">
                 <span class="partner-desc">Keyboards · Mice · Headsets · Monitors</span>
             </a>
-            <a href="pages/products.php?category=gaming-chairs" class="partner-card">
+            <a href="pages/products.php?cat=gaming-chairs" class="partner-card">
                 <img src="assets/images/partners/tt-racing.png" alt="TT Racing" class="partner-logo-img">
                 <span class="partner-desc">Pro-grade gaming chairs</span>
             </a>
@@ -54,20 +60,40 @@ require 'includes/header.php';
 <section class="section">
     <div class="section-head">
         <h2 class="section-title">What's New</h2>
-        <a href="pages/products.php" class="section-link">View all →</a>
     </div>
 
-    <?php if ($latest): ?>
-    <div class="product-grid">
-        <?php foreach ($latest as $product): ?>
-        <a href="pages/product.php?id=<?= (int)$product['id'] ?>" class="product-card">
-            <span class="product-tag">New</span>
-            <?= product_image($product, $base) ?>
-            <div class="product-brand"><?= e($product['category_name']) ?></div>
-            <h3><?= e($product['name']) ?></h3>
-            <p class="price">RM <?= number_format($product['price'], 2) ?></p>
-        </a>
-        <?php endforeach; ?>
+    <?php if ($featured): ?>
+    <?php
+    $spot_specs = array_filter([
+        'CPU'     => $featured['cpu'],
+        'GPU'     => $featured['gpu'],
+        'RAM'     => $featured['ram'],
+        'Storage' => $featured['storage'],
+    ]);
+    ?>
+    <div class="spotlight">
+        <?= product_image($featured, $base, 'spotlight-img') ?>
+        <div class="spotlight-info">
+            <span class="spotlight-tag"><?= $featured['is_featured'] ? '🔥 Featured' : '🆕 Latest Gaming Set' ?></span>
+            <p class="product-brand"><?= e($featured['category_name']) ?></p>
+            <h3><?= e($featured['name']) ?></h3>
+            <p class="spotlight-price">RM <?= number_format($featured['price'], 2) ?></p>
+
+            <?php if ($spot_specs): ?>
+            <ul class="spotlight-specs">
+                <?php foreach ($spot_specs as $label => $value): ?>
+                <li><span><?= $label ?></span> <?= e($value) ?></li>
+                <?php endforeach; ?>
+            </ul>
+            <?php else: ?>
+            <p class="spotlight-note">Full specs coming soon.</p>
+            <?php endif; ?>
+
+            <div class="spotlight-btns">
+                <a href="pages/product.php?id=<?= (int)$featured['id'] ?>" class="btn">View Details</a>
+                <a href="pages/products.php?type=<?= urlencode($featured['category_slug']) ?>" class="btn btn-outline">See All <?= e($featured['category_name']) ?></a>
+            </div>
+        </div>
     </div>
     <?php else: ?>
     <div class="empty-state">New arrivals are on the way. Check back soon.</div>
@@ -91,13 +117,13 @@ require 'includes/header.php';
             </div>
             <div class="cat-info">
                 <span class="cat-label">Custom PCs</span>
-                <span class="cat-sub">Office · Editing · Gaming</span>
+                <span class="cat-sub">Laptops · Office · Editing · Gaming</span>
                 <span class="cat-cta">Shop now →</span>
             </div>
         </a>
         <?php foreach ($accessories as $cat): ?>
         <?php $img = category_image($base, $cat['slug']); ?>
-        <a href="pages/products.php?category=<?= urlencode($cat['slug']) ?>" class="cat-tile">
+        <a href="pages/products.php?cat=<?= urlencode($cat['slug']) ?>" class="cat-tile">
             <div class="cat-media"<?= $img ? ' style="background-image:url(\'' . e($img) . '\')"' : '' ?>>
                 <?php if (!$img): ?><span class="cat-icon"><?= category_icon($cat['slug']) ?></span><?php endif; ?>
             </div>
@@ -120,9 +146,9 @@ require 'includes/header.php';
         <div class="pc-grid">
             <?php foreach (pc_tiers() as $slug => $tier): ?>
             <?php $cat = $tiers[$slug] ?? null; ?>
-            <a href="pages/products.php?category=<?= urlencode($slug) ?>" class="pc-tile pc-<?= e($slug) ?>">
+            <a href="pages/products.php?type=<?= urlencode($slug) ?>" class="pc-tile pc-<?= e($slug) ?>">
                 <span class="pc-icon"><?= category_icon($slug) ?></span>
-                <h3><?= e($tier['title']) ?> PCs</h3>
+                <h3><?= e($tier['name']) ?></h3>
                 <p class="pc-tagline"><?= e($tier['tagline']) ?></p>
                 <ul>
                     <?php foreach ($tier['uses'] as $use): ?>
@@ -130,9 +156,9 @@ require 'includes/header.php';
                     <?php endforeach; ?>
                 </ul>
                 <span class="pc-price">
-                    <?= $cat && $cat['min_price'] !== null ? 'From RM ' . number_format($cat['min_price'], 2) : 'Builds coming soon' ?>
+                    <?= $cat && $cat['min_price'] !== null ? 'From RM ' . number_format($cat['min_price'], 2) : 'Coming soon' ?>
                 </span>
-                <span class="btn">View <?= e($tier['title']) ?> PCs</span>
+                <span class="btn">View <?= e($tier['name']) ?></span>
             </a>
             <?php endforeach; ?>
         </div>
