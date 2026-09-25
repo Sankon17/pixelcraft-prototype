@@ -7,7 +7,11 @@
             <p>Malaysia's custom PC builder. Official partner of Armageddon &amp; TT Racing.</p>
             <div class="social-links">
                 <?php foreach (store_contacts()['social'] as $name => $url): ?>
-                <a href="<?= e($url) ?>" target="_blank" rel="noopener"><?= e($name) ?></a>
+                <?php $icon = asset_image($base, 'social', strtolower($name) . '.png'); ?>
+                <a href="<?= e($url) ?>" target="_blank" rel="noopener">
+                    <?php if ($icon): ?><img src="<?= e($icon) ?>" alt="" class="social-icon"><?php endif; ?>
+                    <?= e($name) ?>
+                </a>
                 <?php endforeach; ?>
             </div>
         </div>
@@ -28,7 +32,7 @@
             <a href="<?= $base ?>pages/location.php">Get directions →</a>
         </div>
     </div>
-    <p class="copyright">&copy; <?= date('Y') ?> PixelCraft Sdn Bhd (1598691-U). All rights reserved.</p>
+    <p class="copyright">&copy; <?= date('Y') ?> Pixel Craft Sdn Bhd (1598691-U). All rights reserved.</p>
 </footer>
 
 <script src="<?= asset($base, 'assets/js/main.js') ?>"></script>

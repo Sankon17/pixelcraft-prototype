@@ -1,5 +1,6 @@
 -- PixelCraft: real PC products + product_specs table.
 -- Safe to re-run: clears Office/Editing/Gaming PCs before inserting.
+-- Run database/pc_specs.sql afterwards to (re)load the specs — deleting products removes their specs.
 -- PC categories: Laptops, Office, Editing, Gaming. (Student PCs was removed; PC Pixel Neo is in Office.)
 -- Core XII, Core Ultra and Core Elite are listed in BOTH Editing and Gaming (separate rows).
 
@@ -20,8 +21,13 @@ CREATE TABLE IF NOT EXISTS product_specs (
   product_id INT NOT NULL,
   cpu VARCHAR(255),
   gpu VARCHAR(255),
+  motherboard VARCHAR(255),
+  psu VARCHAR(100),
+  cooler VARCHAR(100),
+  casing VARCHAR(255),
   ram VARCHAR(100),
   storage VARCHAR(100),
+  config_options VARCHAR(500),
   color VARCHAR(100),
   video_url VARCHAR(500),
   pc_type ENUM('gaming','editing','office','student'),
