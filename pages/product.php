@@ -2,6 +2,7 @@
 session_start();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
+require_once '../includes/fps_data.php';
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
@@ -16,7 +17,8 @@ $stmt = $pdo->prepare("SELECT p.*, c.name AS category_name, c.slug AS category_s
 $stmt->execute([$id]);
 $product = $stmt->fetch();
 
-if (!$product) {
+// Hidden products (admin/products.php) are only visible to a logged-in admin, for previewing
+if (!$product || (!$product['is_active'] && ($_SESSION['admin_logged_in'] ?? false) !== true)) {
     header('Location: pc-categories.php');
     exit;
 }
@@ -138,6 +140,15 @@ function rm(float $amount): string
     return 'RM ' . number_format($amount, fmod($amount, 1) ? 2 : 0);
 }
 
+// CPU badge next to the name, picked from the processor: "Ryzen 5 5500GT" → assets/images/cpu/ryzen-5.png,
+// "Intel i5 12400" → intel-i5.png, "Intel U7 270K" → intel-ultra-7.png. Nothing shows until the file exists.
+$cpu_badge = null;
+$cpu       = (string)$product['cpu'];
+if (preg_match('/Ryzen (\d)/', $cpu, $m))   $cpu_badge = "ryzen-$m[1].png";
+elseif (preg_match('/\bi(\d)\b/', $cpu, $m)) $cpu_badge = "intel-i$m[1].png";
+elseif (preg_match('/\bU(\d)\b/', $cpu, $m)) $cpu_badge = "intel-ultra-$m[1].png";
+$cpu_badge = asset_image('../', 'cpu', $cpu_badge);
+
 $specs = [
     'Processor'     => $product['cpu'],
     'Graphics Card' => $product['gpu'],
@@ -149,20 +160,55 @@ $specs = [
     'Storage'       => $product['storage'],
 ];
 
+// Checkout / warranty perks under the buy buttons (outline icons, drawn with currentColor)
+$perk_icons = [
+    'shield'   => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    'box'      => '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+    'award'    => '<circle cx="12" cy="8" r="6"/><path d="M15.5 12.9 17 22l-5-3-5 3 1.5-9.1"/>',
+    'check'    => '<path d="M21.8 10A10 10 0 1 1 17 3.3"/><path d="m9 11 3 3L22 4"/>',
+    'calendar' => '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+];
+$perks = [
+    ['shield',   '256-bit SSL secure checkout'],
+    ['box',      'Pre-Order : 3-7 days'],
+    ['award',    '100% satisfaction guarantee'],
+    ['check',    'Easy and secure payment'],
+    ['calendar', '15 days easy return policy'],
+];
+// Shown under the video on desktop, and under the buy buttons on phones (where the video sits above the price)
+function perk_list(array $perks, array $icons, string $class): void
+{ ?>
+    <ul class="pd-perks <?= $class ?>">
+        <?php foreach ($perks as [$icon, $text]): ?>
+        <li>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><?= $icons[$icon] ?></svg>
+            <?= e($text) ?>
+        </li>
+        <?php endforeach; ?>
+    </ul>
+<?php }
+
+$services = [
+    ['Free PC Consultation',          'get our help to match the best spec to your budget'],
+    ['Free Setup + Testing',          'fully tested and ready, no loose parts'],
+    ['Free Lifetime Cleaning Service', 'walk into our store anytime for internal cleaning'],
+    ['Installment Plan Available',    'no need to wait for payday to build your dream PC'],
+];
+
 // "Apa Yang Boleh PC Ini Lakukan?" — estimates until real benchmarks are published.
 // Each item: [logo, name, detail, status (ok / mid / no), badge]
 // logo: an image in assets/images/apps/, an emoji, or [short text, tile colour, text colour] for a drawn tile
 $capabilities = [
     'gaming' => [
         'title' => '🎮 Boleh Main Apa?',
-        'note'  => '* FPS adalah anggaran sahaja bergantung kepada tetapan sistem dan versi permainan.',
+        'note'  => '* Anggaran FPS pada 1080p berdasarkan ujian penanda aras awam (Tom\'s Hardware, TechSpot, Notebookcheck). Prestasi sebenar bergantung kepada tetapan, versi permainan dan pemacu.',
+        // Details are filled per PC from includes/fps_data.php (see below); these are the fallbacks
         'items' => [
-            [['GTA',  '#F7A11A', '#1a1a1a'], 'GTA V',               '1080p · ~90 FPS · High Settings',  'ok', 'Lancar'],
-            [['VAL',  '#FF4655', '#fff'],    'Valorant',            '1080p · ~200 FPS · Max Settings',  'ok', 'Lancar'],
-            [['CS2',  '#F0A000', '#1a1a1a'], 'CS2',                 '1080p · ~150 FPS · High Settings', 'ok', 'Lancar'],
-            [['FN',   '#00C3FF', '#fff'],    'Fortnite',            '1080p · ~80 FPS · High Settings',  'ok', 'Lancar'],
-            [['RBLX', '#E31C1C', '#fff'],    'Roblox',              '1080p · ~200 FPS · Max Settings',  'ok', 'Lancar'],
-            [['ML',   '#0055A5', '#fff'],    'Mobile Legends (PC)', '1080p · ~200 FPS · Max Settings',  'ok', 'Lancar'],
+            ['gta5.png',     'GTA V',    '1080p · Lancar dimainkan', 'ok', 'Lancar'],
+            ['valorant.png', 'Valorant', '1080p · Lancar dimainkan', 'ok', 'Lancar'],
+            ['cs2.png',      'CS2',      '1080p · Lancar dimainkan', 'ok', 'Lancar'],
+            ['fortnite.png', 'Fortnite', '1080p · Lancar dimainkan', 'ok', 'Lancar'],
+            ['roblox.png',   'Roblox',   '1080p · Lancar dimainkan', 'ok', 'Lancar'],
         ],
     ],
     'office' => [
@@ -196,17 +242,43 @@ $capabilities = [
         'items' => [
             ['word.png',                  'Microsoft Office',       'Siapkan assignment Word, Excel, PPT tanpa masalah', 'ok', '✓ Sesuai'],
             ['teams.png',                 'Online Class & Meeting', 'Zoom, Teams, Google Meet — 1080p',                  'ok', '✓ Sesuai'],
-            [['VAL',  '#FF4655', '#fff'], 'Valorant',               '1080p · ~120 FPS · Medium-High',                    'ok', '✓ Boleh Main'],
-            [['RBLX', '#E31C1C', '#fff'], 'Roblox',                 '1080p · ~200 FPS · Max Settings',                   'ok', '✓ Boleh Main'],
-            [['MC',   '#62B030', '#fff'], 'Minecraft',              '1080p · ~100 FPS · Smooth',                         'ok', '✓ Boleh Main'],
+            ['valorant.png',              'Valorant',               '1080p · ~120 FPS · Medium-High',                    'ok', '✓ Boleh Main'],
+            ['roblox.png',                'Roblox',                 '1080p · ~200 FPS · Max Settings',                   'ok', '✓ Boleh Main'],
+            ['minecraft.png',             'Minecraft',              '1080p · ~100 FPS · Smooth',                         'ok', '✓ Boleh Main'],
         ],
     ],
 ];
 
 // Office PCs whose integrated graphics handle light games: swap "Gaming Berat ✗" for "Light Gaming ✓"
-if (in_array($product['name'], ['PC Pixel Lite', 'PC Pixel Azure'], true)) {
+if (in_array(pc_key($product['name']), ['pixel lite', 'pixel azure'], true)) {
     $capabilities['office']['items'][6] = ['🎮', 'Light Gaming', 'Game ringan pada tetapan rendah–sederhana', 'ok', '✓ Sesuai'];
 }
+
+// Gaming PCs: per-PC FPS estimates (includes/fps_data.php). Under 60 FPS shows as ~ (playable) rather than ✓
+if ($fps = fps_data()[pc_key($product['name'])] ?? null) {
+    $settings = fps_settings();
+    foreach ($capabilities['gaming']['items'] as &$item) {
+        $game = $item[1];
+        if (!isset($fps[$game])) continue;
+        $values = (array)$fps[$game];
+        $parts  = [];
+        foreach ($values as $variant => $n) {
+            $label   = $game === 'Roblox' && $n >= 240 ? '240 FPS (had maksimum)' : "~$n FPS";
+            $parts[] = is_string($variant) ? "$label ($variant)" : $label;
+        }
+        $item[2] = '1080p · ' . implode(' / ', $parts) . ' · ' . $settings[$game];
+        $item[3] = min($values) >= 60 ? 'ok' : 'mid';
+        $item[4] = $item[3] === 'ok' ? 'Lancar' : 'Boleh Main';
+    }
+    unset($item);
+}
+
+// ✓ first, then ~, then ✗ (usort is stable, so each group keeps its listed order)
+$rank = ['ok' => 0, 'mid' => 1, 'no' => 2];
+foreach ($capabilities as &$group) {
+    usort($group['items'], fn($a, $b) => $rank[$a[3]] <=> $rank[$b[3]]);
+}
+unset($group);
 
 // App logo image, emoji, or a coloured tile with the short name centred
 function cap_logo(string|array $logo): string
@@ -284,7 +356,7 @@ require '../includes/header.php';
             <?php else: ?>
             <div class="pd-image pd-image-placeholder">
                 <span class="pd-ph-icon"><?= category_icon($product['category_slug']) ?></span>
-                <span class="logo">Pixel<span>Craft</span></span>
+                <span class="logo"><?= logo_img('../', true) ?></span>
                 <span class="pd-ph-name"><?= e($product['name']) ?></span>
             </div>
             <?php endif; ?>
@@ -299,13 +371,17 @@ require '../includes/header.php';
                 <div class="pd-video-placeholder">🎮 Performance video coming soon</div>
                 <?php endif; ?>
             </div>
+            <?php perk_list($perks, $perk_icons, 'pd-perks-desktop'); ?>
             <?php endif; ?>
         </div>
 
         <!-- RIGHT: info + configurator -->
         <div class="pd-info">
             <span class="pd-badge"><?= e(strtoupper($product['category_name'])) ?></span>
-            <h1><?= e($product['name']) ?></h1>
+            <!-- CPU logo sits inline after the name, sized to the heading text -->
+            <h1>
+                <?= e($product['name']) ?><?php if ($cpu_badge): ?><img src="<?= e($cpu_badge) ?>" alt="<?= e($cpu) ?>" title="<?= e($cpu) ?>" class="pd-cpu-badge"><?php endif; ?>
+            </h1>
 
             <p class="pd-price">
                 <?php if ($show_from): ?><span class="pd-price-from" id="priceFrom">From</span><?php endif; ?>
@@ -317,11 +393,18 @@ require '../includes/header.php';
             <p class="pd-price-note">Harga bermula dari konfigurasi asas. Pilih set di bawah.</p>
             <?php endif; ?>
 
-            <?php if ($has_jcl): ?>
-            <div class="jcl-teaser" id="jclTeaser"<?= $default['jcl_3yr'] === null ? ' hidden' : '' ?>>
-                <span aria-hidden="true">💳</span>
-                <span>atau <strong id="jclMonthly">RM <?= number_format((float)$default['jcl_3yr'], 2) ?></strong>/bulan melalui JCL 3 tahun</span>
-                <a href="ansuran.php#jcl">Ketahui lebih →</a>
+            <?php if ($is_pc): ?>
+            <div class="jcl-teaser">
+                <span class="jcl-icon" aria-hidden="true">💳</span>
+                <div class="jcl-text">
+                    <?php if ($has_jcl): ?>
+                    <p id="jclTeaser"<?= $default['jcl_3yr'] === null ? ' hidden' : '' ?>>
+                        atau <strong id="jclMonthly">RM <?= number_format((float)$default['jcl_3yr'], 2) ?></strong>/bulan melalui JCL 3 tahun
+                    </p>
+                    <?php endif; ?>
+                    <p class="jcl-sub">Tersedia ansuran bulanan melalui JCL, Atome, Shopee PayLater &amp; lebih.</p>
+                </div>
+                <a href="ansuran.php">Ketahui lebih →</a>
             </div>
             <?php endif; ?>
 
@@ -389,9 +472,18 @@ require '../includes/header.php';
             <?php endif; ?>
 
             <?php if ($is_pc): ?>
-            <div class="pd-ansuran">
-                <p>💳 Tersedia ansuran bulanan melalui JCL, Atome, Shopee PayLater &amp; lebih.</p>
-                <a href="ansuran.php">Ketahui Lebih Lanjut →</a>
+            <?php perk_list($perks, $perk_icons, 'pd-perks-mobile'); ?>
+
+            <div class="pd-services">
+                <h4>⭐ Pixel Craft Exclusive Services</h4>
+                <ul>
+                    <?php foreach ($services as [$title, $text]): ?>
+                    <li>
+                        <span class="pd-service-check" aria-hidden="true">✅</span>
+                        <p><strong><?= e($title) ?></strong> — <?= e($text) ?></p>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
             </div>
             <?php endif; ?>
         </div>
@@ -399,50 +491,32 @@ require '../includes/header.php';
 </section>
 
 <?php if ($pc_type && isset($capabilities[$pc_type])): $cap = $capabilities[$pc_type]; ?>
-<section class="section-band">
+<section class="section-band cap-section pc-<?= e($product['category_slug']) ?>">
     <div class="section">
-        <div class="section-head">
-            <h2 class="section-title">Apa Yang Boleh PC Ini Lakukan?</h2>
-        </div>
-        <h3 class="cap-title"><?= $cap['title'] ?></h3>
+        <div class="cap-wrap">
+            <div class="section-head">
+                <h2 class="section-title">Apa Yang Boleh PC Ini Lakukan?</h2>
+            </div>
+            <h3 class="cap-title"><?= $cap['title'] ?></h3>
 
-        <?php
-        // Left: what it handles; right: what it doesn't (only when there is something to list)
-        $sides = ['ok' => [], 'no' => []];
-        foreach ($cap['items'] as $item) {
-            $sides[$item[3] === 'no' ? 'no' : 'ok'][] = $item;
-        }
-        $sides = array_filter($sides);
-        ?>
-        <div class="cap-split<?= count($sides) > 1 ? '' : ' single' ?>">
-            <?php foreach ($sides as $side => $items): ?>
-            <table class="cap-table cap-table-<?= $side ?>">
-                <thead>
-                    <tr><th colspan="2"><?= $side === 'ok' ? '✓ Sesuai' : '✗ Tidak Sesuai' ?></th></tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($items as [$logo, $name, $detail, $status, $badge]): ?>
-                    <tr>
-                        <td>
-                            <div class="cap-app">
-                                <span class="cap-logo"><?= cap_logo($logo) ?></span>
-                                <div>
-                                    <div class="cap-name"><?= e($name) ?></div>
-                                    <div class="cap-detail"><?= e($detail) ?></div>
-                                </div>
-                            </div>
-                        </td>
-                        <td class="cap-status"><span class="cap-badge cap-badge-<?= $status ?>"><?= e($badge) ?></span></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-            <?php endforeach; ?>
-        </div>
+            <?php $marks = ['ok' => '✓', 'mid' => '~', 'no' => '✗']; ?>
+            <div class="cap-grid">
+                <?php foreach ($cap['items'] as [$logo, $name, $detail, $status, $badge]): ?>
+                <div class="cap-software">
+                    <span class="cap-logo"><?= cap_logo($logo) ?></span>
+                    <span class="cap-name"><?= e($name) ?></span>
+                </div>
+                <div class="cap-box cap-box-<?= $status ?>">
+                    <span class="cap-mark" role="img" aria-label="<?= e($badge) ?>"><?= $marks[$status] ?></span>
+                    <span class="cap-detail"><?= e($detail) ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
 
-        <?php if ($cap['note']): ?>
-        <p class="cap-note"><?= e($cap['note']) ?></p>
-        <?php endif; ?>
+            <?php if ($cap['note']): ?>
+            <p class="cap-note"><?= e($cap['note']) ?></p>
+            <?php endif; ?>
+        </div>
     </div>
 </section>
 <?php endif; ?>

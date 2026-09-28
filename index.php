@@ -8,12 +8,12 @@ $featured = $pdo->query("SELECT p.*, c.name AS category_name, c.slug AS category
     FROM products p
     JOIN categories c ON p.category_id = c.id
     LEFT JOIN product_specs s ON s.product_id = p.id
-    WHERE p.is_featured = 1 OR c.slug = 'gaming-pcs'
+    WHERE p.is_active = 1 AND (p.is_featured = 1 OR c.slug = 'gaming-pcs')
     ORDER BY p.is_featured DESC, p.created_at DESC, p.id DESC
     LIMIT 1")->fetch();
 
 $categories = $pdo->query("SELECT c.*, COUNT(p.id) AS product_count, MIN(p.price) AS min_price
-    FROM categories c LEFT JOIN products p ON p.category_id = c.id
+    FROM categories c LEFT JOIN products p ON p.category_id = c.id AND p.is_active = 1
     GROUP BY c.id ORDER BY c.id")->fetchAll();
 
 $tiers = [];
@@ -31,27 +31,17 @@ $page_title = 'PixelCraft - Custom PC Store';
 require 'includes/header.php';
 ?>
 
-<!-- HERO: PARTNERSHIP -->
+<!-- HERO: store photo -->
 <section class="hero">
     <div class="hero-inner">
         <div class="hero-content">
-            <div class="hero-badge">Official Partner</div>
-            <h1>Powered by <span class="hero-brands"><span class="armageddon-yellow">Armageddon</span> &amp; <span class="red">TT Racing</span></span></h1>
-            <p>Malaysia's premier custom PC builder, featuring exclusive peripherals and gaming chairs from our brand partners.</p>
+            <p class="hero-label">Official Partner of Armageddon &amp; TT Racing</p>
+            <h1>Malaysia's Premier Custom PC Builder</h1>
+            <p class="hero-sub">Seremban's trusted choice for custom gaming and office PCs</p>
             <div class="hero-btns">
                 <a href="pages/pc-categories.php" class="btn">Shop Custom PCs</a>
-                <a href="pages/products.php" class="btn btn-outline">Browse Accessories</a>
+                <a href="pages/products.php" class="btn btn-light-outline">Browse Accessories</a>
             </div>
-        </div>
-        <div class="hero-partners">
-            <a href="pages/products.php?cat=keyboard" class="partner-card">
-                <img src="assets/images/partners/armageddon.png" alt="Armageddon" class="partner-logo-img">
-                <span class="partner-desc">Keyboards · Mice · Headsets · Monitors</span>
-            </a>
-            <a href="pages/products.php?cat=gaming-chairs" class="partner-card">
-                <img src="assets/images/partners/tt-racing.png" alt="TT Racing" class="partner-logo-img">
-                <span class="partner-desc">Pro-grade gaming chairs</span>
-            </a>
         </div>
     </div>
 </section>
@@ -178,6 +168,34 @@ require 'includes/header.php';
             <div class="partner-feature-card">
                 <img src="assets/images/partners/tt-racing.png" alt="TT Racing" class="partner-logo-img">
                 <p>Ergonomic gaming chairs built for long sessions at the desk.</p>
+            </div>
+        </div>
+
+        <?php
+        // Smaller brands we carry; logo files live in assets/images/partners/ (name shown as text if the file is missing)
+        $sellers = [
+            ['name' => 'Alcatroz',  'img' => 'alcatroz.png',  'parent' => 'Armageddon', 'desc' => 'Affordable keyboards, mice and PC accessories'],
+            ['name' => 'SonicGear', 'img' => 'sonicgear.png', 'parent' => 'Armageddon', 'desc' => 'Speakers, headsets and audio peripherals'],
+            ['name' => 'Colorful',  'img' => 'colorful.png',  'parent' => null,         'desc' => 'GPUs, SSDs and PC components'],
+        ];
+        ?>
+        <div class="seller-block">
+            <h3>Authorised Sellers</h3>
+            <p class="seller-sub">PixelCraft also carries products from these authorised brands</p>
+            <div class="seller-grid">
+                <?php foreach ($sellers as $s): ?>
+                <div class="seller-card">
+                    <span class="seller-badge">Authorised Seller</span>
+                    <?php $logo = asset_image('', 'partners', $s['img']); ?>
+                    <div class="seller-logo">
+                        <?php if ($logo): ?><img src="<?= e($logo) ?>" alt="<?= e($s['name']) ?>"><?php else: ?><?= e($s['name']) ?><?php endif; ?>
+                    </div>
+                    <?php if ($s['parent']): ?>
+                    <p class="seller-parent">Sub-brand of <?= e($s['parent']) ?></p>
+                    <?php endif; ?>
+                    <p><?= e($s['desc']) ?></p>
+                </div>
+                <?php endforeach; ?>
             </div>
         </div>
     </div>

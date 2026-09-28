@@ -3,7 +3,7 @@
 <footer class="site-footer">
     <div class="footer-inner">
         <div>
-            <div class="logo"><span>PixelCraft</span></div>
+            <div class="logo"><?= logo_img($base, true) ?></div>
             <p>Malaysia's custom PC builder. Official partner of Armageddon &amp; TT Racing.</p>
             <div class="social-links">
                 <?php foreach (store_contacts()['social'] as $name => $url): ?>

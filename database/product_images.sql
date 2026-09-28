@@ -24,3 +24,29 @@ JOIN (
 ) g
 WHERE p.name = 'PC Pixel Lite';
 UPDATE products SET image = 'pixel-lite-1.jpg' WHERE name = 'PC Pixel Lite';
+
+-- PC Pixel Azure
+DELETE pi FROM product_images pi JOIN products p ON p.id = pi.product_id WHERE p.name = 'PC Pixel Azure';
+INSERT INTO product_images (product_id, filename, sort_order)
+SELECT p.id, g.filename, g.sort_order
+FROM products p
+JOIN (
+  SELECT 'pixel-azure-1.jpg' AS filename, 1 AS sort_order
+  UNION ALL SELECT 'pixel-azure-2-specs.jpg', 2
+  UNION ALL SELECT 'pixel-azure-3-freegifts.jpg', 3
+) g
+WHERE p.name = 'PC Pixel Azure';
+UPDATE products SET image = 'pixel-azure-1.jpg' WHERE name = 'PC Pixel Azure';
+
+-- PC Pixel Radiant
+DELETE pi FROM product_images pi JOIN products p ON p.id = pi.product_id WHERE p.name = 'PC Pixel Radiant (3 Years Warranty)';
+INSERT INTO product_images (product_id, filename, sort_order)
+SELECT p.id, g.filename, g.sort_order
+FROM products p
+JOIN (
+  SELECT 'pixel-radiant-1.jpg' AS filename, 1 AS sort_order
+  UNION ALL SELECT 'pixel-radiant-2-specs.jpg', 2
+  UNION ALL SELECT 'pixel-radiant-3-freegifts.jpg', 3
+) g
+WHERE p.name = 'PC Pixel Radiant (3 Years Warranty)';
+UPDATE products SET image = 'pixel-radiant-1.jpg' WHERE name = 'PC Pixel Radiant (3 Years Warranty)';

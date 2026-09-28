@@ -11,6 +11,13 @@ function asset(string $base, string $path): string
     return $base . $path . (is_file($file) ? '?v=' . filemtime($file) : '');
 }
 
+// Store logo: the compact mark for nav bars, the full logo (with tagline) everywhere else
+function logo_img(string $base, bool $tagline = false): string
+{
+    $file = $tagline ? 'pixelcraft-logo.png' : 'pixelcraft-mark.png';
+    return '<img src="' . e(asset($base, "assets/images/logo/$file")) . '" alt="PixelCraft" class="logo-img">';
+}
+
 function category_icon(string $slug): string
 {
     $icons = [

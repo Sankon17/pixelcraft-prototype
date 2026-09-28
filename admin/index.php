@@ -2,7 +2,7 @@
 session_start();
 require_once '../includes/functions.php';
 
-if (empty($_SESSION['admin'])) {
+if (($_SESSION['admin_logged_in'] ?? false) !== true) {
     header('Location: login.php');
     exit;
 }
@@ -34,7 +34,7 @@ $username = $_SESSION['admin_username'] ?? 'admin';
 
 <header class="site-header">
     <nav class="nav">
-        <a href="index.php" class="logo">Pixel<span>Craft</span> <small class="admin-tag">Admin</small></a>
+        <a href="index.php" class="logo"><?= logo_img('../') ?> <small class="admin-tag">Admin</small></a>
         <div class="admin-user">
             <span>👤 <?= e($username) ?></span>
             <form method="POST">
@@ -47,22 +47,20 @@ $username = $_SESSION['admin_username'] ?? 'admin';
 <main class="section">
     <div class="admin-welcome">
         <h1>Welcome to <span class="red">PixelCraft</span> Admin Panel</h1>
-        <p>You're logged in as <strong><?= e($username) ?></strong>. Product management and price sync are coming next.</p>
+        <p>You're logged in as <strong><?= e($username) ?></strong>. Manage your products and sync prices below.</p>
     </div>
 
     <div class="admin-grid">
-        <div class="admin-tile is-soon">
+        <a href="products.php" class="admin-tile">
             <span class="admin-tile-icon">📦</span>
             <h3>Products</h3>
-            <p>Add, edit and remove products.</p>
-            <span class="soon-tag">Coming soon</span>
-        </div>
-        <div class="admin-tile is-soon">
+            <p>Edit, hide and remove products, and manage PC variants.</p>
+        </a>
+        <a href="sync.php" class="admin-tile">
             <span class="admin-tile-icon">🔄</span>
             <h3>Price Sync</h3>
-            <p>Sync prices from Google Sheets and view sync logs.</p>
-            <span class="soon-tag">Coming soon</span>
-        </div>
+            <p>Upload the Price Sync Excel file to update all PC variant prices.</p>
+        </a>
         <a href="../index.php" class="admin-tile" target="_blank" rel="noopener">
             <span class="admin-tile-icon">🌐</span>
             <h3>View Store</h3>

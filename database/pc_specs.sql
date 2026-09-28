@@ -71,5 +71,9 @@ DROP TEMPORARY TABLE spec_seed;
 -- Performance videos (YouTube links; any watch / youtu.be / shorts URL works)
 UPDATE product_specs ps
 JOIN products p ON p.id = ps.product_id
-SET ps.video_url = 'https://youtu.be/t3h7ieSXsZs'
-WHERE p.name = 'PC Pixel Lite';
+SET ps.video_url = CASE p.name
+    WHEN 'PC Pixel Lite'  THEN 'https://youtu.be/A6Z2pwCDftY'
+    WHEN 'PC Pixel Azure' THEN 'https://youtu.be/K056Oqz1n-k'
+    WHEN 'PC Pixel Radiant (3 Years Warranty)' THEN 'https://youtu.be/jPgklvSo7Oo'
+  END
+WHERE p.name IN ('PC Pixel Lite', 'PC Pixel Azure', 'PC Pixel Radiant (3 Years Warranty)');

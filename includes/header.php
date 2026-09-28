@@ -26,7 +26,7 @@ $nav_active = $nav_active ?? ($current === 'pc-categories.php' ? 'pcs' : '');
 
 <header class="site-header">
     <nav class="nav">
-        <a href="<?= $base ?>index.php" class="logo">Pixel<span>Craft</span></a>
+        <a href="<?= $base ?>index.php" class="logo"><?= logo_img($base) ?></a>
 
         <button class="nav-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
 

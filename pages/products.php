@@ -45,7 +45,7 @@ if ($slugs) {
     // Cheapest first on every listing
     $stmt = $pdo->prepare("SELECT p.*, c.name AS category_name, c.slug AS category_slug
         FROM products p JOIN categories c ON p.category_id = c.id
-        WHERE c.slug IN ($placeholders) ORDER BY p.price ASC, p.id ASC");
+        WHERE c.slug IN ($placeholders) AND p.is_active = 1 ORDER BY p.price ASC, p.id ASC");
     $stmt->execute($slugs);
     $products = $stmt->fetchAll();
 }
@@ -56,55 +56,66 @@ if ($filter !== '' && isset($by_slug[$filter]) && in_array($filter, $chip_slugs,
     $title = 'All Accessories';
 }
 $nav_active = $pc_mode ? 'pcs' : 'shop';
-$subtitle = $pc_mode ? $tiers[$filter]['tagline'] : '';
+$subtitle = $pc_mode
+    ? $tiers[$filter]['tagline']
+    : 'Gaming gear and PC accessories from Armageddon, TT Racing and our other partner brands.';
+
+// Hero title: last word in red, like the other page headers
+$split = strrpos($title, ' ');
+$title_html = $split === false
+    ? '<span class="red">' . e($title) . '</span>'
+    : e(substr($title, 0, $split)) . ' <span class="red">' . e(substr($title, $split + 1)) . '</span>';
 
 $base = '../';
 $page_title = $title . ' - PixelCraft';
 require '../includes/header.php';
 ?>
 
-<section class="section">
-    <?php if ($pc_mode): ?>
-    <a href="pc-categories.php" class="back-link">← All PC categories</a>
-    <?php endif; ?>
+<section class="page-hero">
+    <div class="hero-badge"><?= $pc_mode ? 'Custom PCs' : 'Accessories' ?></div>
+    <h1><?= $title_html ?></h1>
+    <p><?= e($subtitle) ?></p>
+</section>
 
-    <div class="section-head listing-head">
-        <div>
-            <h2 class="section-title"><?= e($title) ?></h2>
-            <?php if ($subtitle): ?><p class="listing-sub"><?= e($subtitle) ?></p><?php endif; ?>
+<section class="section-band">
+    <div class="section">
+        <div class="listing-bar">
+            <?php if ($pc_mode): ?>
+            <a href="pc-categories.php" class="back-link">← All PC categories</a>
+            <?php endif; ?>
+            <span class="listing-count"><?= count($products) ?> product<?= count($products) === 1 ? '' : 's' ?></span>
         </div>
-        <span class="listing-count"><?= count($products) ?> product<?= count($products) === 1 ? '' : 's' ?></span>
-    </div>
 
-    <div class="category-filter">
-        <?php if (!$pc_mode): ?>
-        <a href="<?= $page_url ?>" class="chip <?= $filter === '' ? 'active' : '' ?>">All</a>
+        <div class="category-filter">
+            <?php if (!$pc_mode): ?>
+            <a href="<?= $page_url ?>" class="chip <?= $filter === '' ? 'active' : '' ?>">All</a>
+            <?php endif; ?>
+            <?php foreach ($chips as $cat): ?>
+            <a href="<?= e($chip_link($cat)) ?>" class="chip <?= $filter === $cat['slug'] ? 'active' : '' ?>">
+                <?= e($cat['name']) ?>
+            </a>
+            <?php endforeach; ?>
+        </div>
+
+        <?php if ($products): ?>
+        <div class="product-grid">
+            <?php foreach ($products as $product): ?>
+            <a href="product.php?id=<?= (int)$product['id'] ?>" class="product-card">
+                <?= product_image($product, $base) ?>
+                <div class="product-brand"><?= e($product['category_name']) ?></div>
+                <h3><?= e($product['name']) ?></h3>
+                <p class="price">RM <?= number_format($product['price'], 2) ?></p>
+                <span class="btn btn-outline btn-block">View Details</span>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <?php else: ?>
+        <div class="empty-state">
+            <strong>Coming soon</strong>
+            <p>We're preparing products for this category. Check back soon, or WhatsApp us for a custom build.</p>
+        </div>
         <?php endif; ?>
-        <?php foreach ($chips as $cat): ?>
-        <a href="<?= e($chip_link($cat)) ?>" class="chip <?= $filter === $cat['slug'] ? 'active' : '' ?>">
-            <?= e($cat['name']) ?>
-        </a>
-        <?php endforeach; ?>
     </div>
-
-    <?php if ($products): ?>
-    <div class="product-grid">
-        <?php foreach ($products as $product): ?>
-        <a href="product.php?id=<?= (int)$product['id'] ?>" class="product-card">
-            <?= product_image($product, $base) ?>
-            <div class="product-brand"><?= e($product['category_name']) ?></div>
-            <h3><?= e($product['name']) ?></h3>
-            <p class="price">RM <?= number_format($product['price'], 2) ?></p>
-            <span class="btn btn-outline btn-block">View Details</span>
-        </a>
-        <?php endforeach; ?>
-    </div>
-    <?php else: ?>
-    <div class="empty-state">
-        <strong>Coming soon</strong>
-        <p>We're preparing products for this category. Check back soon, or WhatsApp us for a custom build.</p>
-    </div>
-    <?php endif; ?>
 </section>
 
 <?php require '../includes/footer.php'; ?>
