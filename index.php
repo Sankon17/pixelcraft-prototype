@@ -64,7 +64,7 @@ require 'includes/header.php';
     <div class="spotlight">
         <?= product_image($featured, $base, 'spotlight-img') ?>
         <div class="spotlight-info">
-            <span class="spotlight-tag"><?= $featured['is_featured'] ? '🔥 Featured' : '🆕 Latest Gaming Set' ?></span>
+            <span class="spotlight-tag"><?= $featured['category_slug'] === 'gaming-pcs' ? '🆕 Latest Gaming Set' : '🔥 Featured' ?></span>
             <p class="product-brand"><?= e($featured['category_name']) ?></p>
             <h3><?= e($featured['name']) ?></h3>
             <p class="spotlight-price">RM <?= number_format($featured['price'], 2) ?></p>

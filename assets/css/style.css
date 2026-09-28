@@ -379,7 +379,7 @@ img { max-width: 100%; display: block; }
 /* WHAT'S NEW SPOTLIGHT (one big featured product) */
 .spotlight {
     display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: minmax(0, 480px) 1fr; /* image column matches the square posters, so no side bars */
     gap: 40px;
     align-items: center;
     background:
@@ -392,7 +392,10 @@ img { max-width: 100%; display: block; }
 }
 
 .spotlight-img {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 1;
+    width: 100%;
+    max-width: 480px;
+    justify-self: center;
     border-radius: var(--radius);
     background: radial-gradient(circle at 50% 55%, #3a0000, #111 70%);
     border: 1px solid #2a0000;
@@ -401,7 +404,9 @@ img { max-width: 100%; display: block; }
     align-items: center;
     justify-content: center;
 }
-.spotlight-img img { width: 100%; height: 100%; object-fit: cover; }
+/* contain, not cover: a photo that isn't square still shows whole (title and logo included), on black */
+.spotlight-img img { width: 100%; height: 100%; object-fit: contain; }
+.spotlight-img:not(.is-icon) { background: #000; }
 .spotlight-img.is-icon { font-size: 150px; filter: drop-shadow(0 10px 30px rgba(209, 0, 0, 0.5)); }
 
 .spotlight-tag {
@@ -586,7 +591,10 @@ img { max-width: 100%; display: block; }
 .pd-media { display: flex; flex-direction: column; gap: 20px; }
 
 .pd-image {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 1;
+    width: 100%;
+    max-width: 480px;
+    justify-self: center;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
@@ -1198,6 +1206,7 @@ a.admin-tile:hover { border-color: var(--red); transform: translateY(-3px); }
 
 /* Admin: Price Sync */
 .sync-head { margin: 16px 0 24px; }
+.ap-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; }
 .sync-upload { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; max-width: 760px; }
 .sync-upload input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .sync-drop {
@@ -1291,12 +1300,12 @@ a.admin-tile:hover { border-color: var(--red); transform: translateY(-3px); }
 .ap-edit-head h2 { font-size: 20px; }
 .ap-edit-head span { color: var(--muted); font-size: 14px; }
 
-.ap-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 150px; gap: 16px 18px; align-items: start; }
+.ap-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 18px; align-items: start; }
 .ap-form .ap-wide { grid-column: 1 / -1; }
 .ap-form label { display: flex; flex-direction: column; gap: 6px; }
 .ap-form label > span { font-size: 13px; font-weight: 600; color: #bbb; }
 .ap-form input,
-.ap-form textarea {
+.ap-form select {
     width: 100%;
     padding: 10px 12px;
     background: #0a0a0a;
@@ -1306,28 +1315,56 @@ a.admin-tile:hover { border-color: var(--red); transform: translateY(-3px); }
     font: inherit;
     font-size: 15px;
 }
-.ap-form textarea { resize: vertical; line-height: 1.5; }
 .ap-form input:focus,
-.ap-form textarea:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(209, 0, 0, 0.2); }
+.ap-form select:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(209, 0, 0, 0.2); }
 .ap-form input:disabled { color: #999; background: #151515; }
+.ap-form input[readonly] { color: #bbb; background: #151515; cursor: default; }
+.ap-form input[readonly]:focus { border-color: #2a2a2a; box-shadow: none; }
 .ap-form small { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ap-form small a { color: var(--red-text); }
-.ap-form code { color: #ddd; }
-.ap-preview {
-    grid-row: span 2;
-    height: 150px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #0a0a0a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    overflow: hidden;
-    color: #555;
-    font-size: 13px;
-}
-.ap-preview img { width: 100%; height: 100%; object-fit: cover; }
+.ap-form select { cursor: pointer; }
+.ap-form select optgroup { color: #888; font-style: normal; }
+.ap-form select option { color: #fff; }
+.ap-form .ap-check { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 10px; }
+.ap-form .ap-check input { width: 18px; height: 18px; padding: 0; accent-color: #22c55e; cursor: pointer; }
+.ap-form .ap-check > span { color: #fff; font-size: 14px; cursor: pointer; }
+.ap-form .ap-check small { grid-column: 2; }
 .ap-form-actions { display: flex; gap: 12px; }
+
+/* Specs and Variants sections inside the edit form (one Save for everything) */
+.ap-section { min-width: 0; margin: 8px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); scroll-margin-top: 110px; }
+.ap-section[hidden] { display: none; }
+.ap-section legend { padding-right: 12px; color: #fff; font-size: 17px; font-weight: 700; }
+.ap-section-note { margin-bottom: 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.ap-spec-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 18px; }
+.ap-variants-wrap { margin-bottom: 12px; }
+.ap-variants { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 14px; }
+.ap-variants th {
+    padding: 10px 8px;
+    background: #111;
+    border-bottom: 1px solid #2a2a2a;
+    color: #8a8a8a;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.ap-variants th small { color: #666; font-size: 11px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.ap-variants td { padding: 6px 8px; border-top: 1px solid #1c1c1c; vertical-align: middle; }
+.ap-form .ap-variants input,
+.ap-form .ap-variants select { padding: 8px 10px; font-size: 14px; }
+.ap-form .ap-variants select { min-width: 118px; }
+.ap-form .ap-variants input[type=number] { min-width: 90px; }
+.ap-variants td.ap-jcl { color: #bbb; white-space: nowrap; }
+.ap-form .ap-remove label { flex-direction: row; align-items: center; gap: 6px; color: #bbb; font-size: 13px; cursor: pointer; }
+.ap-form .ap-remove input { width: 16px; height: 16px; padding: 0; accent-color: var(--red); cursor: pointer; }
+.ap-variants tr:has(.ap-remove input:checked) td:not(.ap-remove) { opacity: 0.35; }
+.ap-variants tr:has(.ap-remove input:checked) .ap-remove span { color: var(--red-text); font-weight: 600; }
+.ap-variants tr.is-new td { background: rgba(34, 197, 94, 0.04); }
+.ap-row-x { width: 32px; height: 32px; background: transparent; border: 1px solid #333; border-radius: 6px; color: #999; font-size: 13px; cursor: pointer; }
+.ap-row-x:hover { border-color: var(--red); color: var(--red-text); }
+.ap-add-variant { font-family: inherit; }
 
 .ap-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-bottom: 16px; }
 .ap-tabs { margin-bottom: 0; }
@@ -1426,7 +1463,7 @@ a.admin-tile:hover { border-color: var(--red); transform: translateY(-3px); }
     padding: 0;
     background: none;
     border: 0;
-    color: #777;
+    color: #6b7280;
     font: inherit;
     font-size: 13px;
     font-weight: 600;
@@ -1453,23 +1490,95 @@ a.admin-tile:hover { border-color: var(--red); transform: translateY(-3px); }
     border-radius: 50%;
     transition: transform 0.2s, background 0.2s;
 }
-.ap-switch.is-on { color: #fff; }
-.ap-switch.is-on .ap-switch-knob { background: var(--red); border-color: var(--red); }
+.ap-switch.is-on { color: #22c55e; } /* green = live; red is kept for Delete, the only destructive action */
+.ap-switch.is-on .ap-switch-knob { background: #22c55e; border-color: #22c55e; }
 .ap-switch.is-on .ap-switch-knob::after { transform: translateX(16px); background: #fff; }
-.ap-switch:focus-visible .ap-switch-knob { outline: 2px solid var(--red); outline-offset: 2px; }
+.ap-switch:focus-visible .ap-switch-knob { outline: 2px solid #9ca3af; outline-offset: 2px; }
 
 .ap-actions { display: grid; grid-template-columns: repeat(2, auto); gap: 6px; justify-content: start; }
 .ap-actions .btn { width: 100%; font-family: inherit; line-height: 1.4; text-align: center; white-space: nowrap; }
 .ap-actions form { display: contents; }
+.ap-btn-edit { background: #38bdf8; border-color: #38bdf8; color: #0b1a24; } /* light blue; dark text for contrast */
+.ap-btn-edit:hover { background: #7dd3fc; border-color: #7dd3fc; color: #0b1a24; box-shadow: none; }
+.ap-btn-variants { background: #5b21b6; border-color: #5b21b6; color: #fff; } /* dark purple */
+.ap-btn-variants:hover { background: #6d28d9; border-color: #6d28d9; box-shadow: none; }
 .ap-btn-view { background: transparent; border-color: #444; color: #ddd; }
 .ap-btn-view:hover { background: transparent; border-color: #fff; color: #fff; box-shadow: none; }
 .ap-delete { background: transparent; border-color: var(--red); color: var(--red-text); }
 .ap-delete:hover { background: rgba(209, 0, 0, 0.15); border-color: var(--red); color: #fff; box-shadow: none; }
 
+/* Photos panel: gallery in product-page order, then the upload drop zone */
+.ap-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+    margin: 0 0 18px;
+    padding: 0;
+    list-style: none;
+}
+.ap-photo { display: flex; flex-direction: column; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; }
+.ap-photo.is-cover { border-color: var(--red); }
+.ap-photo-img { position: relative; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: #050505; font-size: 13px; }
+.ap-photo-img a, .ap-photo-img img { display: block; width: 100%; height: 100%; }
+.ap-photo-img img { object-fit: cover; }
+.ap-photo-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 2px 9px;
+    background: var(--red);
+    border-radius: 999px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+.ap-photo-badge.is-num { background: rgba(0, 0, 0, 0.75); border: 1px solid #444; }
+.ap-photo-name { padding: 8px 10px 0; color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-photo-actions { display: grid; grid-template-columns: 38px 38px 1fr; gap: 6px; padding: 8px 10px 10px; }
+.ap-photo-actions .btn { padding: 6px 4px; font-family: inherit; line-height: 1.4; text-align: center; white-space: nowrap; }
+.ap-photo-actions .ap-delete { grid-column: 1 / -1; }
+.ap-photo-actions .btn:disabled { opacity: 0.35; cursor: default; background: transparent; border-color: #444; box-shadow: none; }
+.ap-photos-empty { margin-bottom: 16px; color: var(--muted); font-size: 14px; }
+
+.ap-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; }
+.ap-drop {
+    position: relative;
+    flex: 1 1 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 22px 16px;
+    background: #0a0a0a;
+    border: 2px dashed #333;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.ap-drop:hover, .ap-drop:focus-within, .ap-drop.is-over { border-color: var(--red); background: rgba(209, 0, 0, 0.06); }
+/* The real file input covers the whole zone, so clicking and dropping both work without script */
+.ap-drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.ap-drop-icon { font-size: 26px; }
+.ap-drop strong { font-size: 15px; }
+.ap-drop small { color: var(--muted); font-size: 12px; }
+.ap-drop-files { color: #6fdc8c; font-size: 13px; word-break: break-word; }
+.ap-drop-files:empty { display: none; }
+.ap-drop-files.is-error { color: #ff6b6b; }
+.ap-upload .btn:disabled { opacity: 0.6; cursor: wait; }
+
 @media (max-width: 760px) {
     .ap-edit { padding: 18px 16px; }
+    .ap-gallery { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+    .ap-photo-actions { grid-template-columns: 1fr 1fr; }
+    .ap-photo-actions .btn:nth-of-type(3) { grid-column: 1 / -1; }
+    .ap-upload .btn { flex: 1; }
     .ap-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-    .ap-preview { grid-row: auto; grid-column: 1 / -1; height: 180px; }
+    .ap-form .ap-cat-field { grid-column: 1 / -1; }
+    .ap-spec-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .ap-form-actions .btn { flex: 1; }
 }
 
