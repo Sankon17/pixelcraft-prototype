@@ -81,6 +81,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Home "What's New" spotlight: loops through the featured builds.
+    // Pauses while the pointer or keyboard focus is on it, and doesn't auto-play for people who turn off motion
+    const spot = document.querySelector('[data-spotlight]');
+    const slides = spot ? [...spot.querySelectorAll('.spotlight-slide')] : [];
+    if (slides.length > 1) {
+        const DELAY = 3000; // ms each build stays on screen
+        const title = spot.querySelector('[data-spot-title]');
+        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        let current = 0;
+        let timer = null;
+
+        const show = i => {
+            current = (i + slides.length) % slides.length;
+            slides.forEach((s, n) => {
+                s.classList.toggle('is-active', n === current);
+                s.inert = n !== current;
+            });
+            title.textContent = slides[current].dataset.title;
+        };
+        const stop = () => clearTimeout(timer);
+        const play = () => {
+            stop();
+            if (still || document.hidden) return;
+            timer = setTimeout(() => { show(current + 1); play(); }, DELAY);
+        };
+
+        spot.addEventListener('mouseenter', stop);
+        spot.addEventListener('mouseleave', play);
+        spot.addEventListener('focusin', stop);
+        spot.addEventListener('focusout', e => { if (!spot.contains(e.relatedTarget)) play(); });
+        document.addEventListener('visibilitychange', () => (document.hidden ? stop() : play()));
+
+        // Swipe left/right on phones (then carry on looping from there)
+        let startX = null;
+        const frame = spot.querySelector('.spotlight');
+        frame.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, { passive: true });
+        frame.addEventListener('touchend', e => {
+            if (startX === null) return;
+            const dx = e.changedTouches[0].clientX - startX;
+            startX = null;
+            if (Math.abs(dx) > 50) { show(current + (dx < 0 ? 1 : -1)); play(); }
+        });
+
+        play();
+    }
+
     // Category scroller arrows
     const scroller = document.querySelector('.category-scroller');
     const buttons = document.querySelectorAll('.scroll-btn');

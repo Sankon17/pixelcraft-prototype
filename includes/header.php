@@ -34,6 +34,7 @@ $nav_active = $nav_active ?? ($current === 'pc-categories.php' ? 'pcs' : '');
             <li><a href="<?= $base ?>index.php" class="<?= $current === 'index.php' ? 'active' : '' ?>">Home</a></li>
             <li><a href="<?= $base ?>pages/pc-categories.php" class="<?= $nav_active === 'pcs' ? 'active' : '' ?>">Custom PCs</a></li>
             <li><a href="<?= $base ?>pages/products.php" class="<?= $nav_active === 'shop' ? 'active' : '' ?>">Accessories</a></li>
+            <li><a href="<?= $base ?>pages/services.php" class="<?= $current === 'services.php' ? 'active' : '' ?>">Services</a></li>
             <li><a href="<?= $base ?>pages/ansuran.php" class="<?= $current === 'ansuran.php' ? 'active' : '' ?>">Ansuran</a></li>
             <li><a href="<?= $base ?>pages/location.php" class="<?= $current === 'location.php' ? 'active' : '' ?>">Location</a></li>
         </ul>

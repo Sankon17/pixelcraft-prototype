@@ -2,6 +2,7 @@
 session_start();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
+require_once '_layout.php';
 
 if (($_SESSION['admin_logged_in'] ?? false) !== true) {
     header('Location: login.php');
@@ -11,8 +12,6 @@ if (($_SESSION['admin_logged_in'] ?? false) !== true) {
 if (empty($_SESSION['csrf'])) {
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
-
-$username = $_SESSION['admin_username'] ?? 'admin';
 
 // $where: 'top' shows above the edit form, 'photos' inside the Photos panel
 function flash(string $type, string $message, string $where = 'top'): void
@@ -51,15 +50,6 @@ function back_to_list(int $id = 0): never
     global $state;
     header('Location: ' . list_url($state) . ($id ? '#p-' . $id : ''));
     exit;
-}
-
-// PCs (office / editing / gaming), laptops, or everything else
-function product_group(?string $slug): string
-{
-    if ($slug === 'laptops') {
-        return 'laptop';
-    }
-    return isset(pc_tiers()[$slug ?? '']) ? 'pc' : 'accessory';
 }
 
 function variant_count(PDO $pdo, int $id): int
@@ -152,6 +142,16 @@ const SPEC_FIELDS = [
     'storage'     => ['Storage', 100, '256GB / 512GB / 1TB NVMe'],
 ];
 const SET_TYPES = ['cpu_only' => 'CPU Only', 'full_set' => 'Full Set'];
+// The only RAM / SSD sizes a variant can have (32GB is for high-end builds like Pixel Raptor)
+const RAM_OPTIONS = ['8GB', '16GB', '32GB'];
+const STORAGE_OPTIONS = ['256GB', '512GB', '1TB'];
+
+// ['8GB', '16GB', '32GB'] → "8GB, 16GB or 32GB"
+function or_list(array $items): string
+{
+    $last = array_pop($items);
+    return $items ? implode(', ', $items) . ' or ' . $last : (string)$last;
+}
 const JCL_MONTHS = [1 => 12, 2 => 24, 3 => 36];
 
 // JCL instalment: flat 1.25% a month on the full price, split over the months (RM1,759 → RM70.85 × 36)
@@ -218,8 +218,12 @@ function variant_errors(array $variants): array
     $seen = [];
     foreach (array_values(array_filter($variants, fn($v) => !$v['remove'])) as $n => $v) {
         $row = 'Variant ' . ($n + 1);
-        if ($v['ram'] === '' || $v['storage'] === '') $errors[] = "$row needs its RAM and storage.";
-        if (mb_strlen($v['ram']) > 20 || mb_strlen($v['storage']) > 20) $errors[] = "$row: RAM and storage must be 20 characters or fewer.";
+        if ($v['ram'] === '' || $v['storage'] === '') {
+            $errors[] = "$row needs its RAM and storage.";
+        } else {
+            if (!in_array($v['ram'], RAM_OPTIONS, true)) $errors[] = "$row: RAM must be " . or_list(RAM_OPTIONS) . '.';
+            if (!in_array($v['storage'], STORAGE_OPTIONS, true)) $errors[] = "$row: storage must be " . or_list(STORAGE_OPTIONS) . '.';
+        }
         if (mb_strlen($v['gpu']) > 100) $errors[] = "$row: graphics card must be 100 characters or fewer.";
         if (!isset(SET_TYPES[$v['set_type']])) $errors[] = "$row: choose CPU Only or Full Set.";
         if (!is_numeric($v['price']) || $v['price'] <= 0) $errors[] = "$row needs a price above 0.";
@@ -658,8 +662,9 @@ if ($edit_id) {
 
 // ── Product list ────────────────────────────────────────────────────
 $products = $pdo->query('SELECT p.*, c.name AS category_name, c.slug AS category_slug,
-        s.cpu, s.gpu, s.ram, s.storage, s.video_url,
+        s.cpu, s.gpu, s.motherboard, s.psu, s.cooler, s.casing, s.ram, s.storage, s.video_url,
         (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id) AS variant_count,
+        (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id AND v.stock <= 0) AS variants_out,
         (SELECT COUNT(*) FROM product_images i WHERE i.product_id = p.id) AS photo_count
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
@@ -688,42 +693,20 @@ $grouped = array_fill_keys(array_keys($sections), []);
 foreach ($shown as $p) {
     $grouped[$p['group']][] = $p;
 }
+admin_open('Products', 'products');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex">
-    <title>Products - PixelCraft Admin</title>
-    <link rel="stylesheet" href="<?= asset('../', 'assets/css/style.css') ?>">
-</head>
-<body>
-
-<header class="site-header">
-    <nav class="nav">
-        <a href="index.php" class="logo"><?= logo_img('../') ?> <small class="admin-tag">Admin</small></a>
-        <div class="admin-user">
-            <span>👤 <?= e($username) ?></span>
-            <form method="POST" action="index.php">
-                <button type="submit" name="logout" value="1" class="btn btn-outline btn-sm">Logout</button>
-            </form>
-        </div>
-    </nav>
-</header>
-
-<main class="section">
-    <a href="index.php" class="back-link">← Back to dashboard</a>
-
-    <div class="admin-welcome sync-head ap-head">
+<div class="ap-page">
+    <header class="admin-page-head">
         <div>
-            <h1><span class="red">Products</span></h1>
-            <p><?= count($products) ?> products · <?= $live ?> live on the store · <?= count($products) - $live ?> hidden</p>
+            <h1>Products</h1>
+            <p class="admin-page-sub"><?= count($products) ?> products · <?= $live ?> live on the store · <?= count($products) - $live ?> hidden</p>
         </div>
         <?php if (!$adding): ?>
-        <a href="<?= e(list_url($state, ['add' => 1])) ?>#add" class="btn">＋ Add product</a>
+        <div class="admin-page-actions">
+            <a href="<?= e(list_url($state, ['add' => 1])) ?>#add" class="btn btn-sm admin-btn-icon"><?= admin_icon('plus') ?> Add product</a>
+        </div>
         <?php endif; ?>
-    </div>
+    </header>
 
     <?php if ($flash && (($flash['where'] ?? 'top') === 'top' || !$editing)): ?>
     <div class="admin-flash is-<?= e($flash['type']) ?>" role="status"><?= e($flash['message']) ?></div>
@@ -836,9 +819,21 @@ foreach ($shown as $p) {
                             <tr<?= $v['id'] ? '' : ' class="is-new"' ?>>
                                 <td>
                                     <input type="hidden" name="variants[<?= $i ?>][id]" value="<?= (int)$v['id'] ?>">
-                                    <input type="text" name="variants[<?= $i ?>][ram]" value="<?= e($v['ram']) ?>" maxlength="20" placeholder="e.g. 8GB" aria-label="RAM">
+                                    <select name="variants[<?= $i ?>][ram]" aria-label="RAM">
+                                        <option value="">—</option>
+                                        <?php foreach (RAM_OPTIONS as $size): ?>
+                                        <option value="<?= $size ?>"<?= $v['ram'] === $size ? ' selected' : '' ?>><?= $size ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 </td>
-                                <td><input type="text" name="variants[<?= $i ?>][storage]" value="<?= e($v['storage']) ?>" maxlength="20" placeholder="e.g. 256GB" aria-label="Storage"></td>
+                                <td>
+                                    <select name="variants[<?= $i ?>][storage]" aria-label="Storage">
+                                        <option value="">—</option>
+                                        <?php foreach (STORAGE_OPTIONS as $size): ?>
+                                        <option value="<?= $size ?>"<?= $v['storage'] === $size ? ' selected' : '' ?>><?= $size ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
                                 <td>
                                     <select name="variants[<?= $i ?>][set_type]" aria-label="Set">
                                         <?php foreach (SET_TYPES as $key => $label): ?>
@@ -919,7 +914,7 @@ foreach ($shown as $p) {
                 row.remove();
             } else {
                 row.querySelectorAll('input:not([type=hidden])').forEach(el => { el.value = el.name.endsWith('[stock]') ? '10' : ''; });
-                row.querySelector('select').selectedIndex = 0;
+                row.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
             }
             refresh();
         });
@@ -938,7 +933,7 @@ foreach ($shown as $p) {
             });
             rows.appendChild(row);
             refresh();
-            row.querySelector('input[type=text]').focus();
+            row.querySelector('select').focus();
         });
 
         // Specs and variants only apply to PCs and laptops; disabled fieldsets aren't sent
@@ -1106,8 +1101,12 @@ foreach ($shown as $p) {
                 $thumb = asset_image('../', 'products', $p['image']);
                 // CPU and GPU only: RAM / SSD are per variant and make the column too long
                 $spec  = array_filter([$p['cpu'], $p['gpu']]);
+                // Missing or incomplete information shows in red (same checks as the dashboard's Needs attention)
+                $issues  = product_issues($p);
+                $missing = fn(string $field) => isset($issues[$field]) ? ' is-missing' : '';
                 ?>
-                <tr id="p-<?= (int)$p['id'] ?>" class="<?= $p['is_active'] ? '' : 'is-hidden' ?><?= $editing && $editing['id'] == $p['id'] ? ' is-editing' : '' ?>">
+                <tr id="p-<?= (int)$p['id'] ?>" class="<?= $p['is_active'] ? '' : 'is-hidden' ?><?= $editing && $editing['id'] == $p['id'] ? ' is-editing' : '' ?><?= $issues ? ' has-issues' : '' ?>"
+                    <?= $issues ? 'title="' . e('Missing: ' . implode('; ', array_column($issues, 1))) . '"' : '' ?>>
                     <td>
                         <form method="POST" action="products.php">
                             <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
@@ -1122,7 +1121,7 @@ foreach ($shown as $p) {
                         </form>
                     </td>
                     <td>
-                        <div class="ap-thumb">
+                        <div class="ap-thumb<?= $missing('photo') ?>">
                             <?php if ($thumb): ?>
                             <img src="<?= e($thumb) ?>" alt="" loading="lazy">
                             <?php else: ?>
@@ -1132,15 +1131,28 @@ foreach ($shown as $p) {
                     </td>
                     <td class="ap-name">
                         <strong><?= e($p['name']) ?></strong>
-                        <small><?= $p['image'] ? e($p['image']) : 'No image' ?><?= $p['image'] && !$thumb ? ' · missing' : '' ?><?= $p['photo_count'] > 1 ? ' · ' . (int)$p['photo_count'] . ' photos' : '' ?></small>
+                        <?php if (isset($issues['photo'])): ?>
+                        <small class="ap-missing-text">No photo<?= $p['image'] ? ' (' . e($p['image']) . ' not found)' : '' ?></small>
+                        <?php else: ?>
+                        <small><?= e($p['image']) ?><?= $p['photo_count'] > 1 ? ' · ' . (int)$p['photo_count'] . ' photos' : '' ?></small>
+                        <?php endif; ?>
                     </td>
                     <td><span class="ap-cat"><?= e($p['category_name'] ?? '—') ?></span></td>
-                    <td class="ap-spec"><?= $spec ? e(implode(' · ', $spec)) : '<span class="ap-muted">—</span>' ?></td>
-                    <td class="ap-num">
-                        RM <?= number_format((float)$p['price'], 2) ?>
-                        <?php if ($p['variant_count']): ?><small>from · <?= (int)$p['variant_count'] ?> variants</small><?php endif; ?>
+                    <td class="ap-spec">
+                        <?php if ($spec): ?><?= e(implode(' · ', $spec)) ?><?php elseif (!isset($issues['specs'])): ?><span class="ap-muted">—</span><?php endif; ?>
+                        <?php if (isset($issues['specs'])): ?>
+                        <small class="ap-missing-text"><?= $spec ? e(strstr($issues['specs'][1], ' —', true)) : 'Specs missing' ?></small>
+                        <?php endif; ?>
                     </td>
-                    <td class="ap-num<?= (int)$p['stock'] === 0 ? ' ap-warn' : '' ?>"><?= (int)$p['stock'] ?></td>
+                    <td class="ap-num<?= $missing('price') ?>">
+                        RM <?= number_format((float)$p['price'], 2) ?>
+                        <?php if (isset($issues['variants'])): ?>
+                        <small class="ap-missing-text"><?= e($issues['variants'][1]) ?></small>
+                        <?php elseif ($p['variant_count']): ?>
+                        <small>from · <?= (int)$p['variant_count'] ?> variants</small>
+                        <?php endif; ?>
+                    </td>
+                    <td class="ap-num<?= $missing('stock') ?>"><?= (int)$p['stock'] ?></td>
                     <td>
                         <?php if ($p['video_url']): ?>
                         <a href="<?= e($p['video_url']) ?>" class="ap-link" target="_blank" rel="noopener" title="<?= e($p['video_url']) ?>">▶ Watch</a>
@@ -1171,7 +1183,5 @@ foreach ($shown as $p) {
             <?php endforeach; ?>
         </table>
     </div>
-</main>
-
-</body>
-</html>
+</div>
+<?php admin_close(); ?>

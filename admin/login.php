@@ -41,6 +41,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$locked) {
             $_SESSION['admin_logged_in'] = true;
             $_SESSION['admin_id'] = (int)$admin['id'];
             $_SESSION['admin_username'] = $admin['username'];
+            $_SESSION['admin_login_at'] = time();
+            // For the Account page: keep the previous login, then record this one (database/admin_users_login.sql).
+            // Logging in must still work if that column hasn't been added yet
+            try {
+                $stmt = $pdo->prepare('SELECT last_login_at FROM admin_users WHERE id = ?');
+                $stmt->execute([$admin['id']]);
+                $_SESSION['admin_previous_login'] = $stmt->fetchColumn() ?: null;
+                $pdo->prepare('UPDATE admin_users SET last_login_at = NOW() WHERE id = ?')->execute([$admin['id']]);
+            } catch (PDOException $e) {
+                error_log('Last login not recorded: ' . $e->getMessage());
+            }
             header('Location: index.php');
             exit;
         }

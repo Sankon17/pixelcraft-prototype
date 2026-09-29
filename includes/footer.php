@@ -19,6 +19,7 @@
             <h4>Shop</h4>
             <a href="<?= $base ?>pages/pc-categories.php">Custom PCs</a>
             <a href="<?= $base ?>pages/products.php">Accessories</a>
+            <a href="<?= $base ?>pages/services.php">Services</a>
             <a href="<?= $base ?>pages/cart.php">Cart</a>
             <a href="<?= $base ?>pages/ansuran.php">Ansuran</a>
         </div>

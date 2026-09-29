@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../includes/functions.php';
+require_once '_layout.php';
 
 if (($_SESSION['admin_logged_in'] ?? false) !== true) {
     header('Location: login.php');
@@ -11,38 +12,14 @@ if (empty($_SESSION['csrf'])) {
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
 
-$username = $_SESSION['admin_username'] ?? 'admin';
+admin_open('Price Sync', 'sync');
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="robots" content="noindex">
-    <title>Price Sync - PixelCraft Admin</title>
-    <link rel="stylesheet" href="<?= asset('../', 'assets/css/style.css') ?>">
-</head>
-<body>
-
-<header class="site-header">
-    <nav class="nav">
-        <a href="index.php" class="logo"><?= logo_img('../') ?> <small class="admin-tag">Admin</small></a>
-        <div class="admin-user">
-            <span>👤 <?= e($username) ?></span>
-            <form method="POST" action="index.php">
-                <button type="submit" name="logout" value="1" class="btn btn-outline btn-sm">Logout</button>
-            </form>
+    <header class="admin-page-head">
+        <div>
+            <h1>Price Sync</h1>
+            <p class="admin-page-sub">Upload the PixelCraft Price Sync Reference Excel file to update all variant prices.</p>
         </div>
-    </nav>
-</header>
-
-<main class="section">
-    <a href="index.php" class="back-link">← Back to dashboard</a>
-
-    <div class="admin-welcome sync-head">
-        <h1>Price <span class="red">Sync</span></h1>
-        <p>Upload the PixelCraft Price Sync Reference Excel file to update all variant prices.</p>
-    </div>
+    </header>
 
     <form id="syncForm" class="sync-upload" action="sync_handler.php" method="POST" enctype="multipart/form-data">
         <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
@@ -74,7 +51,6 @@ $username = $_SESSION['admin_username'] ?? 'admin';
             </table>
         </div>
     </section>
-</main>
 
 <script>
 (function () {
@@ -154,6 +130,4 @@ $username = $_SESSION['admin_username'] ?? 'admin';
     });
 })();
 </script>
-
-</body>
-</html>
+<?php admin_close(); ?>

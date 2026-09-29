@@ -83,6 +83,56 @@ function store_contacts(): array
     ];
 }
 
+// PCs (office / editing / gaming), laptops, or everything else — how the admin groups products
+function product_group(?string $slug): string
+{
+    if ($slug === 'laptops') {
+        return 'laptop';
+    }
+    return isset(pc_tiers()[$slug ?? '']) ? 'pc' : 'accessory';
+}
+
+// What's missing or incomplete for a product on the store (used by the admin dashboard and the product list).
+// $p needs price, stock, image, category_slug, variant_count, variants_out and the 8 product_specs columns.
+// Returns field => [severity, what's wrong, edit-page section to fix it], most serious first.
+// Severity 2 = customers can't buy it properly, 1 = it looks unfinished
+function product_issues(array $p): array
+{
+    $specs    = ['cpu', 'gpu', 'motherboard', 'psu', 'cooler', 'casing', 'ram', 'storage'];
+    $group    = product_group($p['category_slug'] ?? null);
+    $variants = (int)$p['variant_count'];
+    $out      = (int)$p['variants_out'];
+    $issues   = [];
+
+    if (!$variants && (float)$p['price'] <= 0) {
+        $issues['price'] = [2, 'No price — shows RM 0.00', 'edit'];
+    }
+    if ((int)$p['stock'] <= 0) {
+        $issues['stock'] = [2, 'Out of stock — can’t be bought', 'edit'];
+    }
+    if ($variants && $out === $variants) {
+        $issues['variants'] = [2, 'All variants out of stock', 'variants'];
+    } elseif ($out) {
+        $issues['variants'] = [1, "$out of $variants variants out of stock", 'variants'];
+    } elseif ($group === 'pc' && !$variants) {
+        $issues['variants'] = [1, 'No variants to choose from', 'variants'];
+    }
+    if (!asset_image('../', 'products', $p['image'] ?? null)) {
+        $issues['photo'] = [1, 'No photo — shows a placeholder', 'photos'];
+    }
+    if ($group !== 'accessory') {
+        $empty = count(array_filter($specs, fn($col) => trim((string)($p[$col] ?? '')) === ''));
+        if ($empty === count($specs)) {
+            $issues['specs'] = [1, 'Specs not filled in — all show TBA', 'specs'];
+        } elseif ($empty) {
+            $issues['specs'] = [1, "$empty of " . count($specs) . ' specs empty — show TBA', 'specs'];
+        }
+    }
+
+    uasort($issues, fn($a, $b) => $b[0] <=> $a[0]);
+    return $issues;
+}
+
 function pc_tiers(): array
 {
     // Order here = order of the cards. Each slug has a matching .pc-<slug> accent in style.css.

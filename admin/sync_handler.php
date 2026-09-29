@@ -181,6 +181,14 @@ try {
 
     $pdo->commit();
 
+    // History for the dashboard (database/price_sync_log.sql). Saving it must never undo a sync that already worked
+    try {
+        $pdo->prepare('INSERT INTO price_sync_log (filename, admin, rows_updated, prices_changed, skipped, not_found, products) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([mb_substr($file['name'], 0, 255), $_SESSION['admin_username'] ?? null, $counts['updated'], $counts['changed'], $counts['skipped'], $counts['not_found'], count($touched)]);
+    } catch (PDOException $e) {
+        error_log('Price sync history not saved: ' . $e->getMessage());
+    }
+
     echo json_encode($counts + ['products' => count($touched), 'log' => $log]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {

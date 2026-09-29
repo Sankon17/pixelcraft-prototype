@@ -2,15 +2,32 @@
 require_once 'includes/db.php';
 require_once 'includes/functions.php';
 
-// What's New spotlight: the product marked is_featured, otherwise the newest Gaming PC
-$featured = $pdo->query("SELECT p.*, c.name AS category_name, c.slug AS category_slug,
+// What's New spotlight: a slideshow that loops through these builds, in this order.
+// Product IDs (not names) so renaming one in the admin doesn't break it; hidden or deleted ones are skipped
+$spotlight_picks = [
+    32 => ['title' => "What's New",  'tag' => '🆕 Latest Gaming Set'],  // Pixel Radiant
+    25 => ['title' => 'Budget PC',   'tag' => '💸 Best Budget Pick'],   // Pixel Lite
+    42 => ['title' => 'High-End 4K', 'tag' => '🔥 4K Ultra Gaming'],    // Pixel Raptor
+];
+$spot_sql = "SELECT p.*, c.name AS category_name, c.slug AS category_slug,
         s.cpu, s.gpu, s.ram, s.storage
     FROM products p
     JOIN categories c ON p.category_id = c.id
     LEFT JOIN product_specs s ON s.product_id = p.id
-    WHERE p.is_active = 1 AND (p.is_featured = 1 OR c.slug = 'gaming-pcs')
-    ORDER BY p.is_featured DESC, p.created_at DESC, p.id DESC
-    LIMIT 1")->fetch();
+    WHERE p.is_active = 1";
+$ids = implode(',', array_map('intval', array_keys($spotlight_picks)));
+$found = [];
+foreach ($pdo->query("$spot_sql AND p.id IN ($ids)") as $row) {
+    $found[(int)$row['id']] = $row;
+}
+$slides = [];
+foreach ($spotlight_picks as $id => $pick) {
+    if (isset($found[$id])) $slides[] = $pick + $found[$id];
+}
+// None of them live: fall back to the newest Gaming PC
+if (!$slides && ($newest = $pdo->query("$spot_sql AND c.slug = 'gaming-pcs' ORDER BY p.created_at DESC, p.id DESC LIMIT 1")->fetch())) {
+    $slides[] = ['title' => "What's New", 'tag' => '🆕 Latest Gaming Set'] + $newest;
+}
 
 $categories = $pdo->query("SELECT c.*, COUNT(p.id) AS product_count, MIN(p.price) AS min_price
     FROM categories c LEFT JOIN products p ON p.category_id = c.id AND p.is_active = 1
@@ -47,48 +64,57 @@ require 'includes/header.php';
 </section>
 
 <!-- LATEST PRODUCTS / NEWS -->
-<section class="section">
+<!-- Textured background from here down to the Custom PCs band -->
+<div class="home-texture">
+<div class="spot-band">
+<section class="section" data-spotlight>
     <div class="section-head">
-        <h2 class="section-title">What's New</h2>
+        <h2 class="section-title" data-spot-title><?= e($slides[0]['title'] ?? "What's New") ?></h2>
     </div>
 
-    <?php if ($featured): ?>
-    <?php
-    $spot_specs = array_filter([
-        'CPU'     => $featured['cpu'],
-        'GPU'     => $featured['gpu'],
-        'RAM'     => $featured['ram'],
-        'Storage' => $featured['storage'],
-    ]);
-    ?>
-    <div class="spotlight">
-        <?= product_image($featured, $base, 'spotlight-img') ?>
-        <div class="spotlight-info">
-            <span class="spotlight-tag"><?= $featured['category_slug'] === 'gaming-pcs' ? '🆕 Latest Gaming Set' : '🔥 Featured' ?></span>
-            <p class="product-brand"><?= e($featured['category_name']) ?></p>
-            <h3><?= e($featured['name']) ?></h3>
-            <p class="spotlight-price">RM <?= number_format($featured['price'], 2) ?></p>
+    <?php if ($slides): ?>
+    <div class="spotlight" aria-roledescription="carousel" aria-label="Featured builds">
+        <?php foreach ($slides as $i => $slide): ?>
+        <?php
+        $spot_specs = array_filter([
+            'CPU'     => $slide['cpu'],
+            'GPU'     => $slide['gpu'],
+            'RAM'     => $slide['ram'],
+            'Storage' => $slide['storage'],
+        ]);
+        ?>
+        <div class="spotlight-slide<?= $i === 0 ? ' is-active' : '' ?>" data-title="<?= e($slide['title']) ?>"
+             role="group" aria-roledescription="slide" aria-label="<?= e($slide['name']) ?> (<?= $i + 1 ?> of <?= count($slides) ?>)"<?= $i === 0 ? '' : ' inert' ?>>
+            <?= product_image($slide, $base, 'spotlight-img') ?>
+            <div class="spotlight-info">
+                <span class="spotlight-tag"><?= e($slide['tag']) ?></span>
+                <p class="product-brand"><?= e($slide['category_name']) ?></p>
+                <h3><?= e($slide['name']) ?></h3>
+                <p class="spotlight-price">RM <?= number_format($slide['price'], 2) ?></p>
 
-            <?php if ($spot_specs): ?>
-            <ul class="spotlight-specs">
-                <?php foreach ($spot_specs as $label => $value): ?>
-                <li><span><?= $label ?></span> <?= e($value) ?></li>
-                <?php endforeach; ?>
-            </ul>
-            <?php else: ?>
-            <p class="spotlight-note">Full specs coming soon.</p>
-            <?php endif; ?>
+                <?php if ($spot_specs): ?>
+                <ul class="spotlight-specs">
+                    <?php foreach ($spot_specs as $label => $value): ?>
+                    <li><span><?= $label ?></span> <?= e($value) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php else: ?>
+                <p class="spotlight-note">Full specs coming soon.</p>
+                <?php endif; ?>
 
-            <div class="spotlight-btns">
-                <a href="pages/product.php?id=<?= (int)$featured['id'] ?>" class="btn">View Details</a>
-                <a href="pages/products.php?type=<?= urlencode($featured['category_slug']) ?>" class="btn btn-outline">See All <?= e($featured['category_name']) ?></a>
+                <div class="spotlight-btns">
+                    <a href="pages/product.php?id=<?= (int)$slide['id'] ?>" class="btn">View Details</a>
+                    <a href="pages/products.php?type=<?= urlencode($slide['category_slug']) ?>" class="btn btn-outline">See All <?= e($slide['category_name']) ?></a>
+                </div>
             </div>
         </div>
+        <?php endforeach; ?>
     </div>
     <?php else: ?>
     <div class="empty-state">New arrivals are on the way. Check back soon.</div>
     <?php endif; ?>
 </section>
+</div>
 
 <!-- SHOP BY CATEGORY -->
 <section class="section" id="categories">
@@ -125,6 +151,7 @@ require 'includes/header.php';
         <?php endforeach; ?>
     </div>
 </section>
+</div><!-- /home-texture -->
 
 <!-- CUSTOM PCs: OFFICE / EDITING / GAMING -->
 <section class="section-band">
