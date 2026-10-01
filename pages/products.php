@@ -10,7 +10,8 @@ require_once '../includes/functions.php';
 $filter = trim($_GET['type'] ?? $_GET['cat'] ?? $_GET['category'] ?? '');
 
 $tiers      = pc_tiers();
-$categories = $pdo->query("SELECT * FROM categories ORDER BY id")->fetchAll();
+// A category without a slug can't be linked to (its chip would act like "All"), so it is left out
+$categories = $pdo->query("SELECT * FROM categories WHERE slug <> '' ORDER BY id")->fetchAll();
 $by_slug    = array_column($categories, null, 'slug');
 
 $pc_mode = isset($tiers[$filter]);

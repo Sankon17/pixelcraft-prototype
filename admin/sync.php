@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once '../includes/db.php'; // the sidebar's pending-orders count
 require_once '../includes/functions.php';
 require_once '_layout.php';
 

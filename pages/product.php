@@ -3,6 +3,7 @@ session_start();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
 require_once '../includes/fps_data.php';
+require_once '../includes/cart.php';
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
@@ -53,13 +54,6 @@ function variant_keys(array $v): array
     ];
 }
 
-function variant_label(array $v, array $set_labels): string
-{
-    $parts = [$v['ram'] . ' / ' . $v['storage'], $set_labels[$v['set_type']]];
-    if ($v['gpu_variant']) $parts[] = $v['gpu_variant'];
-    if ($v['color']) $parts[] = $v['color'];
-    return implode(' · ', $parts);
-}
 
 // Chip groups: value => label, in order of first appearance (so the first chip of each is the cheapest variant)
 $options      = ['ramssd' => [], 'set' => [], 'gpu' => [], 'color' => []];
@@ -93,7 +87,9 @@ $show_from = $variants ? count($variants) > 1 : count($configs) > 1;
 
 // Tambah ke Troli / Beli Sekarang
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $stock > 0) {
-    $limit = $stock;
+    $limit      = $stock;
+    $variant_id = null;
+    $config     = null;
 
     if ($variants) {
         // Only variants of this product; anything else falls back to the cheapest
@@ -101,25 +97,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $stock > 0) {
         foreach ($variants as $v) {
             if ((int)$v['id'] === (int)($_POST['selected_variant_id'] ?? 0)) $chosen = $v;
         }
-        $limit = min($limit, (int)$chosen['stock']);
-        $_SESSION['cart_variant'][$id] = (int)$chosen['id'];
-        $_SESSION['cart_config'][$id]  = variant_label($chosen, $set_labels);
-    } else {
-        // Remember the chosen set (only values we actually offer)
-        $config = $_POST['config'] ?? '';
-        if (in_array($config, $configs, true)) {
-            $_SESSION['cart_config'][$id] = $config;
-        }
+        $limit      = min($limit, (int)$chosen['stock']);
+        $variant_id = (int)$chosen['id'];
+    } elseif ($configs) {
+        // The chosen RAM/SSD set (only values we actually offer)
+        $config = in_array($_POST['config'] ?? '', $configs, true) ? $_POST['config'] : $configs[0];
     }
 
-    if ($limit > 0) {
-        $qty     = max(1, min((int)($_POST['quantity'] ?? 1), $max_qty));
-        $in_cart = $_SESSION['cart'][$id] ?? 0;
-        $_SESSION['cart'][$id] = min($in_cart + $qty, $limit);
+    // Each product + option is its own cart line (includes/cart.php)
+    $qty   = max(1, min((int)($_POST['quantity'] ?? 1), $max_qty));
+    $added = $limit > 0 ? cart_add($id, $variant_id, $config, $qty, $limit) : 0;
+
+    if (($_POST['action'] ?? '') === 'buy_now') {
+        header('Location: checkout.php');
+        exit;
     }
 
-    $buy_now = ($_POST['action'] ?? '') === 'buy_now';
-    header('Location: ' . ($buy_now ? 'checkout.php' : 'cart.php'));
+    // Tambah ke Troli keeps the customer here: "You just added Pixel Radiant, 8GB / 256GB · CPU Only to the cart."
+    $what = $product['name'] . (($detail = $variant_id ? variant_detail($chosen) : $config) ? ", $detail" : '');
+    $toast = match (true) {
+        $limit <= 0 => ['error', "Sorry, $what is out of stock."],
+        $added === 0 => ['error', "Your cart already has all we can sell of $what."],
+        default => ['success', 'You just added ' . ($added > 1 ? "$added × " : '') . "$what to the cart."],
+    };
+    // The page sends the button with fetch() and shows the message without reloading (assets/js/main.js)
+    if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'fetch') {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => $toast[0] === 'success', 'message' => $toast[1], 'count' => cart_count()]);
+        exit;
+    }
+    $_SESSION['toast'] = $toast;
+    header('Location: product.php?id=' . $id);
     exit;
 }
 
@@ -257,6 +265,9 @@ if (in_array(pc_key($product['name']), ['pixel lite', 'pixel azure'], true)) {
 // Gaming PCs: per-PC FPS estimates (includes/fps_data.php). Under 60 FPS shows as ~ (playable) rather than ✓
 if ($fps = fps_data()[pc_key($product['name'])] ?? null) {
     $settings = fps_settings();
+    // Higher-end builds are shown at the resolution they're built for (1440p, 4K)
+    $res = fps_resolution(pc_key($product['name']));
+    $capabilities['gaming']['note'] = str_replace('pada 1080p', "pada $res", $capabilities['gaming']['note']);
     foreach ($capabilities['gaming']['items'] as &$item) {
         $game = $item[1];
         if (!isset($fps[$game])) continue;
@@ -266,7 +277,7 @@ if ($fps = fps_data()[pc_key($product['name'])] ?? null) {
             $label   = $game === 'Roblox' && $n >= 240 ? '240 FPS (had maksimum)' : "~$n FPS";
             $parts[] = is_string($variant) ? "$label ($variant)" : $label;
         }
-        $item[2] = '1080p · ' . implode(' / ', $parts) . ' · ' . $settings[$game];
+        $item[2] = "$res · " . implode(' / ', $parts) . ' · ' . $settings[$game];
         $item[3] = min($values) >= 60 ? 'ok' : 'mid';
         $item[4] = $item[3] === 'ok' ? 'Lancar' : 'Boleh Main';
     }

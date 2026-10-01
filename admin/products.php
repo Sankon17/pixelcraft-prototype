@@ -19,7 +19,7 @@ function flash(string $type, string $message, string $where = 'top'): void
     $_SESSION['flash'] = ['type' => $type, 'message' => $message, 'where' => $where];
 }
 
-// List tabs and sort order. They ride along in the URL (and in every form) so they survive edits, hides and deletes
+// List tabs, sort order and search. They ride along in the URL (and in every form) so they survive edits, hides and deletes
 const LIST_TYPES = ['all' => 'All', 'pc' => 'PCs', 'laptop' => 'Laptops', 'accessory' => 'Accessories'];
 const LIST_SORTS = [
     'price_asc'  => 'Price: low to high',
@@ -32,17 +32,37 @@ function list_state(array $src): array
 {
     $type = $src['type'] ?? 'all';
     $sort = $src['sort'] ?? 'price_asc';
+    $q    = $src['q'] ?? '';
     return [
         'type' => is_string($type) && isset(LIST_TYPES[$type]) ? $type : 'all',
         'sort' => is_string($sort) && isset(LIST_SORTS[$sort]) ? $sort : 'price_asc',
+        'q'    => is_string($q) ? mb_substr(trim($q), 0, 100) : '',
     ];
 }
 
-// products.php?type=pc&sort=price_desc (defaults are left out of the URL)
+// products.php?type=pc&sort=price_desc&q=rtx (defaults and an empty search are left out of the URL)
 function list_url(array $state, array $extra = []): string
 {
-    $query = array_filter($state + $extra, fn($v, $k) => !($k === 'type' && $v === 'all') && !($k === 'sort' && $v === 'price_asc'), ARRAY_FILTER_USE_BOTH);
+    $query = array_filter($state + $extra, fn($v, $k) => !($k === 'type' && $v === 'all') && !($k === 'sort' && $v === 'price_asc') && $v !== '', ARRAY_FILTER_USE_BOTH);
     return 'products.php' . ($query ? '?' . http_build_query($query) : '');
+}
+
+// What the search box looks through: name, category, CPU, GPU and photo filename
+function search_text(array $p): string
+{
+    return mb_strtolower(implode(' ', array_filter([$p['name'], $p['category_name'], $p['cpu'], $p['gpu'], $p['image']])));
+}
+
+// Every word typed has to appear somewhere ("rtx blaze" finds the Pixel Blaze with an RTX card)
+function matches_search(array $p, string $q): bool
+{
+    $text = search_text($p);
+    foreach (preg_split('/\s+/', mb_strtolower($q), -1, PREG_SPLIT_NO_EMPTY) as $word) {
+        if (!str_contains($text, $word)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function back_to_list(int $id = 0): never
@@ -423,7 +443,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
 
 $state = list_state($_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET);
 $state_fields = '<input type="hidden" name="type" value="' . e($state['type']) . '">'
-    . '<input type="hidden" name="sort" value="' . e($state['sort']) . '">';
+    . '<input type="hidden" name="sort" value="' . e($state['sort']) . '">'
+    . '<input type="hidden" name="q" value="' . e($state['q']) . '" data-list-q>';
 
 $errors = [];
 $form = null;
@@ -1055,12 +1076,16 @@ admin_open('Products', 'products');
         <nav class="category-filter ap-tabs" aria-label="Product type">
             <?php foreach (LIST_TYPES as $key => $label): ?>
             <?php if ($key === 'accessory' && !$counts['accessory']) continue; ?>
-            <a href="<?= e(list_url(['type' => $key, 'sort' => $state['sort']])) ?>" class="chip<?= $state['type'] === $key ? ' active' : '' ?>"<?= $state['type'] === $key ? ' aria-current="page"' : '' ?>>
+            <a href="<?= e(list_url(['type' => $key, 'sort' => $state['sort'], 'q' => $state['q']])) ?>" data-tab-type="<?= $key ?>" class="chip<?= $state['type'] === $key ? ' active' : '' ?>"<?= $state['type'] === $key ? ' aria-current="page"' : '' ?>>
                 <?= $label ?> <span class="ap-tab-count"><?= $counts[$key] ?></span>
             </a>
             <?php endforeach; ?>
         </nav>
         <?php if ($state['type'] !== 'all'): ?><input type="hidden" name="type" value="<?= e($state['type']) ?>"><?php endif; ?>
+        <label class="ap-search">
+            <span aria-hidden="true">🔍</span>
+            <input type="search" name="q" value="<?= e($state['q']) ?>" placeholder="Search name, category, CPU or GPU" aria-label="Search products" autocomplete="off" id="productSearch">
+        </label>
         <label class="ap-sort">
             <span>Sort</span>
             <select name="sort" onchange="this.form.submit()">
@@ -1090,11 +1115,12 @@ admin_open('Products', 'products');
             <?php if (!$shown): ?>
             <tbody><tr><td colspan="9" class="ap-empty">No products here yet.</td></tr></tbody>
             <?php endif; ?>
+            <tbody data-no-match hidden><tr><td colspan="9" class="ap-empty">No products match “<span data-no-match-text></span>”.</td></tr></tbody>
             <?php foreach ($sections as $group => [$icon, $label]): ?>
             <?php if (!$grouped[$group]) continue; ?>
-            <tbody>
+            <tbody data-section>
                 <?php if ($state['type'] === 'all'): ?>
-                <tr class="ap-section"><th colspan="9"><?= $icon ?> <?= $label ?> <span><?= count($grouped[$group]) ?></span></th></tr>
+                <tr class="ap-section"><th colspan="9"><?= $icon ?> <?= $label ?> <span data-section-count><?= count($grouped[$group]) ?></span></th></tr>
                 <?php endif; ?>
                 <?php foreach ($grouped[$group] as $p): ?>
                 <?php
@@ -1106,6 +1132,7 @@ admin_open('Products', 'products');
                 $missing = fn(string $field) => isset($issues[$field]) ? ' is-missing' : '';
                 ?>
                 <tr id="p-<?= (int)$p['id'] ?>" class="<?= $p['is_active'] ? '' : 'is-hidden' ?><?= $editing && $editing['id'] == $p['id'] ? ' is-editing' : '' ?><?= $issues ? ' has-issues' : '' ?>"
+                    data-search="<?= e(search_text($p)) ?>"<?= $state['q'] !== '' && !matches_search($p, $state['q']) ? ' hidden' : '' ?>
                     <?= $issues ? 'title="' . e('Missing: ' . implode('; ', array_column($issues, 1))) . '"' : '' ?>>
                     <td>
                         <form method="POST" action="products.php">
@@ -1184,4 +1211,48 @@ admin_open('Products', 'products');
         </table>
     </div>
 </div>
+
+<script>
+// Search as you type: rows are filtered straight away, and the search is kept in the URL, the tab links
+// and every form on the page so it survives Edit, Live/Hidden, Delete and changing tab or sort
+(() => {
+    const box = document.getElementById('productSearch');
+    if (!box) return;
+    const rows = [...document.querySelectorAll('tr[data-search]')];
+    const noMatch = document.querySelector('[data-no-match]');
+
+    function apply() {
+        const q = box.value.trim();
+        const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+        let shown = 0;
+        rows.forEach(tr => {
+            const hit = words.every(w => tr.dataset.search.includes(w));
+            tr.hidden = !hit;
+            if (hit) shown++;
+        });
+        document.querySelectorAll('tbody[data-section]').forEach(tb => {
+            const visible = tb.querySelectorAll('tr[data-search]:not([hidden])').length;
+            tb.hidden = visible === 0;
+            const count = tb.querySelector('[data-section-count]');
+            if (count) count.textContent = visible;
+        });
+        noMatch.hidden = shown > 0 || rows.length === 0;
+        noMatch.querySelector('[data-no-match-text]').textContent = q;
+
+        document.querySelectorAll('[data-list-q]').forEach(input => { input.value = q; });
+        const setQ = url => { q ? url.searchParams.set('q', q) : url.searchParams.delete('q'); return url; };
+        document.querySelectorAll('a[data-tab-type]').forEach(a => { a.href = setQ(new URL(a.href)).href; });
+        history.replaceState(null, '', setQ(new URL(location.href)).href);
+    }
+    box.addEventListener('input', apply);
+    // Enter stays on the page (the list is already filtered)
+    box.form.addEventListener('submit', e => { if (document.activeElement === box) { e.preventDefault(); apply(); } });
+    // "/" jumps to the search box, Esc clears it
+    document.addEventListener('keydown', e => {
+        if (e.key === '/' && !e.target.closest('input, textarea, select, [contenteditable]')) { e.preventDefault(); box.focus(); box.select(); }
+    });
+    box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.value) { box.value = ''; apply(); } });
+    if (box.value) apply();
+})();
+</script>
 <?php admin_close(); ?>

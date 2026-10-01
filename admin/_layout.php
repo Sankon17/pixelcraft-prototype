@@ -23,6 +23,7 @@ function admin_icon(string $name): string
         'stock'     => '<path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/>',
         'plus'      => '<path d="M12 5v14"/><path d="M5 12h14"/>',
         'lock'      => '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+        'orders'    => '<path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-2 2-2-2-2 2-2-2-3 2V4a1 1 0 0 1 1-1z"/><path d="M9 8h6"/><path d="M9 12h6"/>',
     ];
     return '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
         . ($paths[$name] ?? '') . '</svg>';
@@ -33,9 +34,19 @@ function admin_open(string $title, string $active): void
     $username = $_SESSION['admin_username'] ?? 'admin';
     $nav = [
         'dashboard' => ['index.php', 'Dashboard', 'dashboard'],
+        'orders'    => ['orders.php', 'Orders', 'orders'],
         'products'  => ['products.php', 'Products', 'box'],
         'sync'      => ['sync.php', 'Price Sync', 'sync'],
     ];
+    // New orders waiting for the team, shown on the Orders link (database/orders.sql)
+    global $pdo;
+    $pending = 0;
+    if (isset($pdo)) {
+        try {
+            $pending = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'pending'")->fetchColumn();
+        } catch (PDOException $e) {
+        }
+    }
     ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -55,6 +66,7 @@ function admin_open(string $title, string $active): void
             <?php foreach ($nav as $key => [$href, $label, $icon]): ?>
             <a href="<?= $href ?>" class="admin-nav-link<?= $key === $active ? ' is-active' : '' ?>"<?= $key === $active ? ' aria-current="page"' : '' ?>>
                 <?= admin_icon($icon) ?><span><?= $label ?></span>
+                <?php if ($key === 'orders' && $pending): ?><b class="admin-nav-count" title="<?= $pending ?> pending"><?= $pending ?></b><?php endif; ?>
             </a>
             <?php endforeach; ?>
             <a href="../index.php" class="admin-nav-link" target="_blank" rel="noopener" title="Opens the store in a new tab">

@@ -79,6 +79,71 @@ document.addEventListener('DOMContentLoaded', () => {
                 qty.value = Math.min(Math.max(next, Number(qty.min)), Number(qty.max));
             });
         });
+
+        // Tambah ke Troli: add without leaving the page, then say what was added (Beli Sekarang still goes to checkout)
+        buyForm.addEventListener('submit', async e => {
+            if (e.submitter?.value !== 'cart') return;
+            e.preventDefault();
+            const btn = e.submitter;
+            btn.disabled = true;
+            try {
+                const body = new FormData(buyForm);
+                body.set('action', 'cart');
+                const res = await fetch(location.href, { method: 'POST', body, headers: { 'X-Requested-With': 'fetch' } });
+                const data = await res.json();
+                setCartCount(data.count);
+                showToast(data.message, data.ok);
+            } catch (err) {
+                buyForm.submit(); // fall back to a normal page load
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    }
+
+    // Notifications ("You just added … to the cart."): close button, and they go away by themselves
+    const toastArea = document.querySelector('.toast-area');
+    const dismiss = toast => {
+        toast.classList.add('is-leaving');
+        setTimeout(() => toast.remove(), 250);
+    };
+    const arm = toast => {
+        toast.querySelector('.toast-close').addEventListener('click', () => dismiss(toast));
+        setTimeout(() => toast.isConnected && dismiss(toast), 6000);
+    };
+    function showToast(message, ok) {
+        if (!toastArea) return;
+        toastArea.querySelectorAll('.toast').forEach(t => t.remove());
+        const toast = document.createElement('div');
+        toast.className = 'toast ' + (ok ? 'is-success' : 'is-error');
+        toast.setAttribute('role', 'status');
+        toast.innerHTML = '<span class="toast-icon" aria-hidden="true"></span><p></p>'
+            + (ok ? '<a class="btn btn-sm">View Cart</a>' : '') + '<button type="button" class="toast-close" aria-label="Close">×</button>';
+        toast.querySelector('.toast-icon').textContent = ok ? '✓' : '!';
+        toast.querySelector('p').textContent = message;
+        if (ok) toast.querySelector('a').href = toastArea.dataset.cartUrl;
+        toastArea.appendChild(toast);
+        arm(toast);
+    }
+    toastArea?.querySelectorAll('.toast').forEach(arm);
+
+    // The cart count in the header
+    function setCartCount(count) {
+        const link = document.querySelector('.cart-link');
+        if (!link || typeof count !== 'number') return;
+        let badge = link.querySelector('.cart-count');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'cart-count';
+            badge.setAttribute('aria-hidden', 'true');
+            link.appendChild(badge);
+        }
+        badge.textContent = count;
+        badge.hidden = count < 1;
+        link.setAttribute('aria-label', 'Cart, ' + count + ' item' + (count === 1 ? '' : 's'));
+        badge.classList.remove('is-bump');
+        void badge.offsetWidth;
+        badge.classList.add('is-bump');
     }
 
     // Home "What's New" spotlight: loops through the featured builds.

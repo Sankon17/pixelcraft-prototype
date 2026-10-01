@@ -2,11 +2,12 @@
 // Set $base ('' for root pages, '../' for pages/), $page_title and optionally $lang before including.
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/cart.php';
 
 $base       = $base ?? '';
 $page_title = $page_title ?? 'PixelCraft - Custom PC Store';
 $lang       = $lang ?? 'en';
-$cart_count = isset($_SESSION['cart']) ? max(0, array_sum($_SESSION['cart'])) : 0;
+$cart_count = cart_count();
 $current    = basename($_SERVER['PHP_SELF']);
 // Pages can set $nav_active ('pcs' or 'shop') when the file name alone isn't enough (products.php serves both)
 $nav_active = $nav_active ?? ($current === 'pc-categories.php' ? 'pcs' : '');
@@ -22,7 +23,7 @@ $nav_active = $nav_active ?? ($current === 'pc-categories.php' ? 'pcs' : '');
     <link href="https://fonts.googleapis.com/css2?family=Michroma&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= asset($base, 'assets/css/style.css') ?>">
 </head>
-<body>
+<body class="site">
 
 <header class="site-header">
     <nav class="nav">
@@ -40,14 +41,31 @@ $nav_active = $nav_active ?? ($current === 'pc-categories.php' ? 'pcs' : '');
         </ul>
 
         <div class="nav-icons">
-            <a href="<?= $base ?>pages/cart.php" title="Cart" class="cart-link">
-                🛒
+            <a href="<?= $base ?>pages/cart.php" class="cart-link<?= in_array($current, ['cart.php', 'checkout.php'], true) ? ' active' : '' ?>"
+               aria-label="Cart, <?= $cart_count ?> item<?= $cart_count === 1 ? '' : 's' ?>">
+                <span aria-hidden="true">🛒</span><span class="cart-label">Cart</span>
                 <?php if ($cart_count > 0): ?>
-                <span class="cart-count"><?= $cart_count ?></span>
+                <span class="cart-count" aria-hidden="true"><?= $cart_count ?></span>
                 <?php endif; ?>
             </a>
         </div>
     </nav>
 </header>
+
+<?php
+// One-off message after an action, e.g. "You just added … to the cart." (main.js shows the same box without reloading)
+$toast = $_SESSION['toast'] ?? null;
+unset($_SESSION['toast']);
+?>
+<div class="toast-area" aria-live="polite" data-cart-url="<?= $base ?>pages/cart.php">
+    <?php if ($toast): ?>
+    <div class="toast is-<?= e($toast[0]) ?>" role="status">
+        <span class="toast-icon" aria-hidden="true"><?= $toast[0] === 'success' ? '✓' : '!' ?></span>
+        <p><?= e($toast[1]) ?></p>
+        <?php if ($toast[0] === 'success'): ?><a href="<?= $base ?>pages/cart.php" class="btn btn-sm">View Cart</a><?php endif; ?>
+        <button type="button" class="toast-close" aria-label="Close">×</button>
+    </div>
+    <?php endif; ?>
+</div>
 
 <main>

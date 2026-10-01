@@ -52,10 +52,26 @@ $packages = [
 require '../includes/header.php';
 ?>
 
+<style>
+/* This page only: trust strip and the service-hours notice (the rest is in assets/css/style.css) */
+.svc-trust { padding: 20px 24px; background: #121212; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.svc-trust ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 40px; max-width: var(--max); margin: 0 auto; list-style: none; }
+.svc-trust li { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; }
+.svc-trust li::before { content: "✓"; color: var(--red-text); font-size: 18px; font-weight: 800; }
+.svc-hours { max-width: var(--max); margin: 0 auto; padding: 22px 24px 40px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; text-align: center; }
+@media (max-width: 640px) {
+    /* Two by two on phones */
+    .svc-trust ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+    .svc-trust li { align-items: flex-start; font-size: 14px; }
+    .svc-hours { font-size: 13px; }
+}
+</style>
+
 <section class="page-hero">
     <p class="svc-kicker">PixelCraft Services</p>
     <h1>OUR <span class="red">SERVICES</span></h1>
     <p>Professional PC &amp; Laptop Services by PixelCraft</p>
+    <p>Walk in or book ahead — our technicians are ready to help with anything from a quick clean to a full PC build. All services come with a free basic diagnosis.</p>
 </section>
 
 <section class="section">
@@ -78,9 +94,20 @@ require '../includes/header.php';
                 <?php foreach ($s['parts'] as $part): ?><li><?= e($part) ?></li><?php endforeach; ?>
             </ul>
             <?php endif; ?>
+            <a href="<?= e($aftersales['url'] . '?text=' . rawurlencode('Hi PixelCraft, I would like to book a service: ' . $s['name'])) ?>"
+               class="btn btn-outline svc-book" target="_blank" rel="noopener">Book on WhatsApp</a>
         </article>
         <?php endforeach; ?>
     </div>
+</section>
+
+<section class="svc-trust" aria-label="Why PixelCraft">
+    <ul>
+        <li>Fast Turnaround</li>
+        <li>Experienced Technicians</li>
+        <li>Genuine Parts</li>
+        <li>Free Diagnosis</li>
+    </ul>
 </section>
 
 <section class="section-band">
@@ -116,5 +143,7 @@ require '../includes/header.php';
         <p class="svc-cta-note">Technicians are in store daily, 9am–6pm · <a href="location.php">Find the store →</a></p>
     </div>
 </section>
+
+<p class="svc-hours">🕐 Technician service hours: 9:00 AM – 6:00 PM daily | Sales &amp; enquiries: 9:00 AM – 10:00 PM daily</p>
 
 <?php require '../includes/footer.php'; ?>
