@@ -1,6 +1,6 @@
 <?php
 // Estimated FPS for each gaming PC (at 1080p, or the resolution in fps_resolution()),
-// used by "Apa Yang Boleh PC Ini Lakukan?" on pages/product.php.
+// used by "What Can This PC Do?" on pages/product.php.
 //
 // How these were worked out (September 2026), so they can be re-checked or updated:
 //  - GPU scaling: Tom's Hardware GPU hierarchy, 1080p Ultra averages
@@ -28,6 +28,20 @@
 //    Fortnite 4K Epic is kept cautious (one source claims 120–160 FPS on the 5070 Ti at native 4K Epic).
 //
 // fps_data() is keyed by pc_key() of the product name.
+//
+// Gaming laptops (October 2026). Only laptops with a dedicated gaming GPU are listed: the office laptops
+// (Acer Aspire Lite 15, Asus ExpertBook B1, Lenovo IdeaPad Slim 3) show "What Is It Good For?" instead of games.
+// Laptop GPUs run at a power limit (TGP) set by the maker, which changes their speed a lot, so the figures are for
+// each model's own TGP:
+//  - MSI Thin 15 B13UC: RTX 3050 4GB Laptop at 45W (MSI spec), i5-13420H. Notebookcheck's RTX 3050 Laptop averages
+//    (all TGPs, 35–95W) are GTA V 1080p high 114 / ultra 60 and CS2 med 125 / ultra 71; the 45W version sits
+//    ~15% below average, so GTA V ultra ≈ 50 and CS2 high ≈ 90. Valorant high ≈ 129 FPS measured on MSI's GF63 Thin
+//    with the same 45W RTX 3050. Fortnite Epic: the desktop RTX 3050 stays under 60, this 45W laptop chip ≈ 35–40.
+//  - HP Victus 15-fa2743TX: RTX 4050 6GB Laptop at 75W (HP 15-fa2 spec), i7-14650HX. Notebookcheck's RTX 4050 Laptop
+//    averages are GTA V 1080p high 155 / ultra 81 and CS2 high 128 (75W is close to that average); Sportskeeda
+//    measured CS2 very high 130 and Fortnite Epic (DLSS off) 82 on a 125W 4050, so ≈ 75 at 75W. Valorant 244 FPS
+//    average measured on an RTX 4050 Laptop with the slower i5-12450HX.
+//  - Roblox: no per-GPU benchmarks; cautious figures below its 240 FPS cap (as for the desktop builds).
 // Values: a number, or [variant label => number] when the PC is sold with a choice of GPU.
 
 // Short PC name used as the lookup key, so the "PC " prefix, "(3 Years Warranty)" and "Mini ITX"
@@ -105,6 +119,13 @@ function fps_data(): array
         // 1440p
         'pixel hellion' => [
             'GTA V' => 180, 'Valorant' => 420, 'CS2' => 340, 'Fortnite' => 115, 'Roblox' => 240,
+        ],
+        // Gaming laptops (see the notes at the top)
+        'msi thin 15 b13uc-3441my' => [
+            'GTA V' => 50, 'Valorant' => 130, 'CS2' => 90, 'Fortnite' => 38, 'Roblox' => 110,
+        ],
+        'hp victus gaming 15-fa2743tx' => [
+            'GTA V' => 80, 'Valorant' => 250, 'CS2' => 130, 'Fortnite' => 75, 'Roblox' => 200,
         ],
         // 4K
         'pixel raptor' => [

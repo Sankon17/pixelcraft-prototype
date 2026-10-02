@@ -1,7 +1,7 @@
 <?php
 $base = '../';
 $page_title = 'Ansuran - PixelCraft';
-$lang = 'ms';
+// English page; the eligibility and documents cards stay in Malay (lang="ms" on those cards)
 
 $apply_url = 'https://forms.gle/3iVTBiN1ZGBfUsSMA';
 
@@ -26,22 +26,22 @@ require '../includes/header.php';
 
 <!-- INTRO -->
 <section class="page-hero ansuran-hero">
-    <div class="hero-badge">Pelan Ansuran</div>
-    <h1>Tak perlu risau kalau nak beli <span class="red">setup impian</span> 💻✨</h1>
-    <p>Dekat Pixel Craft, anda boleh buat ansuran guna pelbagai kaedah pembayaran. Senang &amp; fleksibel, ikut bajet anda 🔧💻</p>
+    <div class="hero-badge">Instalment Plans</div>
+    <h1>No need to worry about buying your <span class="red">dream setup</span> 💻✨</h1>
+    <p>At Pixel Craft, you can pay in instalments with a range of payment methods. Easy &amp; flexible, to suit your budget 🔧💻</p>
 </section>
 
 <!-- JCL -->
 <section class="section-band" id="jcl">
     <div class="section">
         <div class="jcl-intro">
-            <span class="jcl-pill">💰 Ansuran JCL</span>
-            <h2>Dapatkan PC Gaming Idaman Anda Secara Ansuran! 🎮</h2>
-            <p>Miliki PC gaming berprestasi tinggi yang anda impikan kini bukan lagi angan-angan. Kami menawarkan ansuran JCL yang membolehkan anda membuat pembelian secara bulanan yang teratur.</p>
+            <span class="jcl-pill">💰 JCL Instalments</span>
+            <h2>Get Your Dream Gaming PC in Instalments! 🎮</h2>
+            <p>Owning the high-performance gaming PC you've always wanted is no longer just a dream. We offer JCL instalments so you can pay for your purchase in regular monthly payments.</p>
         </div>
 
         <div class="jcl-grid">
-            <div class="info-card">
+            <div class="info-card" lang="ms">
                 <h3><span class="info-num">1</span> Syarat Kelayakan JCL</h3>
                 <dl class="elig-list">
                     <?php foreach ($eligibility as $row): ?>
@@ -53,7 +53,7 @@ require '../includes/header.php';
                 </dl>
             </div>
 
-            <div class="info-card">
+            <div class="info-card" lang="ms">
                 <h3><span class="info-num">2</span> Dokumen Sokongan</h3>
                 <ul class="doc-list">
                     <?php foreach ($documents as $doc): ?>
@@ -65,15 +65,15 @@ require '../includes/header.php';
 
         <div class="notice">
             <span class="notice-icon">ℹ️</span>
-            <p>Sila ambil perhatian, terdapat caj faedah (interest) sebanyak <strong>1.25% setiap bulan</strong>.</p>
+            <p>Please note that there is an interest charge of <strong>1.25% per month</strong>.</p>
         </div>
 
         <div class="cta-box">
             <div>
-                <h3>Sedia untuk memohon?</h3>
-                <p>Sediakan dokumen sokongan anda, kemudian isi borang permohonan dalam talian.</p>
+                <h3>Ready to apply?</h3>
+                <p>Get your supporting documents ready, then fill in the online application form.</p>
             </div>
-            <a href="<?= e($apply_url) ?>" class="btn btn-lg" target="_blank" rel="noopener">Mohon Sekarang →</a>
+            <a href="<?= e($apply_url) ?>" class="btn btn-lg" target="_blank" rel="noopener">Apply Now →</a>
         </div>
     </div>
 </section>

@@ -33,10 +33,13 @@ function list_state(array $src): array
     $type = $src['type'] ?? 'all';
     $sort = $src['sort'] ?? 'price_asc';
     $q    = $src['q'] ?? '';
+    $cats = is_string($src['cats'] ?? null) ? $src['cats'] : '';
     return [
         'type' => is_string($type) && isset(LIST_TYPES[$type]) ? $type : 'all',
         'sort' => is_string($sort) && isset(LIST_SORTS[$sort]) ? $sort : 'price_asc',
         'q'    => is_string($q) ? mb_substr(trim($q), 0, 100) : '',
+        // Category filter (the ticked boxes beside the list): slugs, comma-separated
+        'cats' => implode(',', array_unique(array_filter(explode(',', $cats), fn($c) => preg_match('/^[a-z0-9-]{1,60}$/', $c)))),
     ];
 }
 
@@ -188,7 +191,7 @@ function has_specs(?array $category): bool
 
 function variants_of(PDO $pdo, int $id): array
 {
-    $stmt = $pdo->prepare('SELECT id, ram, storage, set_type, gpu_variant AS gpu, price, stock FROM product_variants WHERE product_id = ? ORDER BY price, id');
+    $stmt = $pdo->prepare('SELECT id, option_name, option_values, ram, storage, set_type, gpu_variant AS gpu, price, stock FROM product_variants WHERE product_id = ? ORDER BY price, id');
     $stmt->execute([$id]);
     return array_map(fn($v) => ['remove' => false] + $v, $stmt->fetchAll());
 }
@@ -256,22 +259,155 @@ function variant_errors(array $variants): array
     return $errors;
 }
 
-// The whole add/edit form: details, plus specs and variants for PCs and laptops.
+// ── Accessory variants (Shopee-style): up to 3 variation types, e.g. Colour (Red, White, Grey) and Fabric
+// (PU Leather, PU). Every combination of their options is a variant with its own price and stock ──
+const OPTION_TYPES_MAX  = 3;
+const OPTION_VALUES_MAX = 20;
+const OPTION_TYPE_MAX   = 30;  // "Colour"
+const OPTION_MAX        = 60;  // "PU Leather"
+const OPTION_COMBOS_MAX = 100;
+
+// Every combination of the types' options, in order: [Red, PU Leather], [Red, PU], [White, PU Leather] …
+function option_combos(array $groups): array
+{
+    $combos = $groups ? [[]] : [];
+    foreach ($groups as $g) {
+        $next = [];
+        foreach ($combos as $combo) {
+            foreach ($g['values'] as $value) {
+                $next[] = [...$combo, $value];
+            }
+        }
+        $combos = $next;
+    }
+    return $combos;
+}
+
+function combo_key(array $values): string
+{
+    return mb_strtolower(json_encode(array_values($values), JSON_UNESCAPED_UNICODE));
+}
+
+// The accessory editor's starting point: ['groups' => [[name, values], …], 'rows' => one per variant]
+function options_from(?string $groups_json, array $variants): array
+{
+    $groups = json_decode((string)$groups_json, true);
+    $groups = is_array($groups) ? $groups : [];
+    $rows = [];
+    foreach ($variants as $v) {
+        $values = json_decode((string)$v['option_values'], true);
+        if (!is_array($values)) {
+            // A variant from when this was a PC: named by its RAM / SSD
+            $values = [(string)$v['option_name'] !== '' ? (string)$v['option_name'] : trim($v['ram'] . ' / ' . $v['storage'], ' /')];
+        }
+        $rows[] = ['id' => (int)$v['id'], 'values' => array_map('strval', $values), 'price' => $v['price'], 'stock' => (string)$v['stock']];
+    }
+    // Variants that don't fit the saved types show as one "Option" type, so nothing is lost
+    if ($rows && array_filter($rows, fn($r) => count($r['values']) !== count($groups))) {
+        $rows = array_map(fn($r) => ['values' => [implode(' · ', $r['values'])]] + $r, $rows);
+        $groups = [['name' => 'Option', 'values' => array_values(array_unique(array_column(array_column($rows, 'values'), 0)))]];
+    }
+    return ['groups' => $groups, 'rows' => $rows];
+}
+
+// As posted: the types, and a row (price, stock, variant id) for every combination of their options
+function read_options(array $src): array
+{
+    $groups = [];
+    foreach ((array)($src['groups'] ?? []) as $g) {
+        $name   = trim((string)($g['name'] ?? ''));
+        $values = array_values(array_filter(array_map(fn($v) => trim((string)$v), (array)($g['values'] ?? [])), fn($v) => $v !== ''));
+        if ($name === '' && !$values) continue; // a type left empty
+        $groups[] = ['name' => $name, 'values' => $values];
+    }
+    $posted = [];
+    foreach ((array)($src['combos'] ?? []) as $c) {
+        $values = json_decode((string)($c['values'] ?? ''), true);
+        if (is_array($values)) {
+            $posted[combo_key(array_map('strval', $values))] = $c;
+        }
+    }
+    // Too many types or options is an error (option_errors); don't build thousands of rows for it
+    $too_many = count($groups) > OPTION_TYPES_MAX || array_filter($groups, fn($g) => count($g['values']) > OPTION_VALUES_MAX);
+    $rows = [];
+    foreach ($too_many ? [] : option_combos($groups) as $values) {
+        $c = $posted[combo_key($values)] ?? [];
+        $rows[] = ['id' => (int)($c['id'] ?? 0), 'values' => $values, 'price' => trim((string)($c['price'] ?? '')), 'stock' => trim((string)($c['stock'] ?? ''))];
+    }
+    return ['groups' => $groups, 'rows' => $rows];
+}
+
+// "Red, White, Grey and 2 more"
+function some_of(array $labels): string
+{
+    return implode(', ', array_slice($labels, 0, 4)) . (count($labels) > 4 ? ' and ' . (count($labels) - 4) . ' more' : '');
+}
+
+function option_errors(array $options): array
+{
+    $errors = [];
+    if (count($options['groups']) > OPTION_TYPES_MAX) {
+        $errors[] = 'Up to ' . OPTION_TYPES_MAX . ' variation types.';
+    }
+    $names = [];
+    foreach ($options['groups'] as $n => $g) {
+        $type = $g['name'] !== '' ? $g['name'] : 'Variation ' . ($n + 1);
+        $key  = mb_strtolower($g['name']);
+        if ($g['name'] === '') {
+            $errors[] = "$type needs a name, e.g. Colour.";
+        } elseif (mb_strlen($g['name']) > OPTION_TYPE_MAX) {
+            $errors[] = "$type: the name must be " . OPTION_TYPE_MAX . ' characters or fewer.';
+        } elseif (isset($names[$key])) {
+            $errors[] = "There are two variation types called $type.";
+        }
+        $names[$key] = true;
+        if (!$g['values']) {
+            $errors[] = "$type needs at least one option, e.g. Red.";
+        } elseif (count($g['values']) > OPTION_VALUES_MAX) {
+            $errors[] = "$type can have up to " . OPTION_VALUES_MAX . ' options.';
+        }
+        $seen = [];
+        foreach ($g['values'] as $value) {
+            if (mb_strlen($value) > OPTION_MAX) $errors[] = "$type: “" . mb_substr($value, 0, 20) . '…” must be ' . OPTION_MAX . ' characters or fewer.';
+            if (isset($seen[mb_strtolower($value)])) $errors[] = "$type has “{$value}” twice.";
+            $seen[mb_strtolower($value)] = true;
+        }
+    }
+    if (count($options['rows']) > OPTION_COMBOS_MAX) {
+        $errors[] = 'That makes ' . count($options['rows']) . ' variants; the most is ' . OPTION_COMBOS_MAX . '. Remove some options.';
+        return $errors;
+    }
+    $no_price  = array_filter($options['rows'], fn($r) => !is_numeric($r['price']) || $r['price'] <= 0);
+    $bad_stock = array_filter($options['rows'], fn($r) => !ctype_digit($r['stock']));
+    $label = fn($r) => implode(' · ', $r['values']);
+    if ($no_price)  $errors[] = 'Give every variant a price above 0 (missing: ' . some_of(array_map($label, $no_price)) . ').';
+    if ($bad_stock) $errors[] = 'Stock must be a whole number of 0 or more (' . some_of(array_map($label, $bad_stock)) . ').';
+    return $errors;
+}
+
+// The whole add/edit form: details, plus specs and variants for PCs and laptops, or variants for accessories.
 // $had_variants: the product already has variants (its price comes from them if the Variants section isn't on the form)
 function read_full_form(array $post, array $categories, bool $had_variants = false): array
 {
-    $with_specs = isset($post['specs']) && has_specs(find_category($categories, (int)($post['category_id'] ?? 0)));
-    $variants   = $with_specs ? read_variants((array)($post['variants'] ?? [])) : [];
-    $kept       = array_filter($variants, fn($v) => !$v['remove']);
+    $category     = find_category($categories, (int)($post['category_id'] ?? 0));
+    $with_specs   = isset($post['specs']) && has_specs($category);
+    $with_options = isset($post['options']['on']) && $category && !has_specs($category);
+    $variants     = $with_specs ? read_variants((array)($post['variants'] ?? [])) : [];
+    $options      = $with_options ? read_options((array)$post['options']) : ['groups' => [], 'rows' => []];
+    $kept         = $with_specs ? array_filter($variants, fn($v) => !$v['remove']) : $options['rows'];
     // With variants the price is the cheapest one's, so the typed price isn't checked (or used)
-    $price_from_variants = $with_specs ? (bool)$kept : $had_variants;
+    $price_from_variants = $with_specs || $with_options ? (bool)$kept : $had_variants;
     [$form, $errors] = read_product_form($post, $categories, $price_from_variants);
     $form['specs']    = $with_specs ? read_specs((array)$post['specs']) : read_specs([]);
     $form['variants'] = $variants;
+    $form['options']  = $options;
     if ($with_specs) {
         $errors = [...$errors, ...spec_errors($form['specs']), ...variant_errors($variants)];
     }
-    return [$form, $errors, $with_specs, $price_from_variants];
+    if ($with_options) {
+        $errors = [...$errors, ...option_errors($options)];
+    }
+    return [$form, $errors, $with_specs, $price_from_variants, $with_options];
 }
 
 function save_specs(PDO $pdo, int $id, array $specs): void
@@ -321,10 +457,11 @@ function save_variants(PDO $pdo, int $product_id, array $variants): array
             $pdo->prepare('DELETE FROM product_variants WHERE id = ?')->execute([$v['id']]);
             $counts[2]++;
         } elseif ($old) {
-            $same = [$old['ram'], $old['storage'], $old['set_type'], (string)$old['gpu'], (float)$old['price'], (int)$old['stock']]
-                === [$v['ram'], $v['storage'], $v['set_type'], $v['gpu'], $price, (int)$v['stock']];
+            $same = [$old['ram'], $old['storage'], $old['set_type'], (string)$old['gpu'], (float)$old['price'], (int)$old['stock'], (string)$old['option_name'] . $old['option_values']]
+                === [$v['ram'], $v['storage'], $v['set_type'], $v['gpu'], $price, (int)$v['stock'], ''];
             if ($same) continue;
-            $pdo->prepare('UPDATE product_variants SET ram = ?, storage = ?, set_type = ?, gpu_variant = ?, price = ?, stock = ? WHERE id = ?')
+            // option_name is cleared: a variant from when this was an accessory is now named by its RAM / SSD
+            $pdo->prepare('UPDATE product_variants SET option_name = NULL, option_values = NULL, ram = ?, storage = ?, set_type = ?, gpu_variant = ?, price = ?, stock = ? WHERE id = ?')
                 ->execute([$v['ram'], $v['storage'], $v['set_type'], $gpu, $price, (int)$v['stock'], $v['id']]);
             if ($price !== (float)$old['price']) {
                 $pdo->prepare('UPDATE product_variants SET jcl_1yr = ?, jcl_2yr = ?, jcl_3yr = ? WHERE id = ?')->execute([...$jcl($price), $v['id']]);
@@ -337,9 +474,55 @@ function save_variants(PDO $pdo, int $product_id, array $variants): array
         }
     }
 
-    // The store shows "From RM…": the cheapest variant
+    price_from_cheapest($pdo, $product_id);
+    return $counts;
+}
+
+// The store shows "From RM…": the cheapest variant
+function price_from_cheapest(PDO $pdo, int $product_id): void
+{
     $pdo->prepare('UPDATE products p JOIN (SELECT MIN(price) AS min_price FROM product_variants WHERE product_id = ?) v SET p.price = v.min_price WHERE p.id = ? AND v.min_price IS NOT NULL')
         ->execute([$product_id, $product_id]);
+}
+
+// Applies an accessory's variation types: a variant for every combination (kept by id, so a renamed option keeps its row),
+// variants whose combination is gone are removed. No RAM / SSD, and no JCL (only shown for PCs). Returns [added, changed, removed]
+function save_options(PDO $pdo, int $product_id, array $options): array
+{
+    $current = [];
+    foreach (variants_of($pdo, $product_id) as $v) {
+        $current[(int)$v['id']] = $v;
+    }
+    $counts = [0, 0, 0];
+    $kept = [];
+
+    foreach ($options['rows'] as $r) {
+        $label = implode(' · ', $r['values']);
+        $json  = json_encode($r['values'], JSON_UNESCAPED_UNICODE);
+        $price = round((float)$r['price'], 2);
+        $old   = isset($current[$r['id']]) && !isset($kept[$r['id']]) ? $current[$r['id']] : null;
+
+        if ($old) {
+            $kept[$r['id']] = true;
+            if ([(string)$old['option_name'], (string)$old['option_values'], (float)$old['price'], (int)$old['stock']] === [$label, $json, $price, (int)$r['stock']]) continue;
+            $pdo->prepare("UPDATE product_variants SET option_name = ?, option_values = ?, ram = '', storage = '', gpu_variant = NULL, color = NULL, price = ?, stock = ? WHERE id = ?")
+                ->execute([$label, $json, $price, (int)$r['stock'], $r['id']]);
+            $counts[1]++;
+        } else {
+            $pdo->prepare("INSERT INTO product_variants (product_id, option_name, option_values, ram, storage, gpu_variant, color, price, stock) VALUES (?, ?, ?, '', '', NULL, NULL, ?, ?)")
+                ->execute([$product_id, $label, $json, $price, (int)$r['stock']]);
+            $counts[0]++;
+        }
+    }
+    // A removed option (or type) takes its combinations with it
+    foreach (array_diff_key($current, $kept) as $id => $_) {
+        $pdo->prepare('DELETE FROM product_variants WHERE id = ?')->execute([$id]);
+        $counts[2]++;
+    }
+    $pdo->prepare('UPDATE products SET option_groups = ? WHERE id = ?')
+        ->execute([$options['groups'] ? json_encode($options['groups'], JSON_UNESCAPED_UNICODE) : null, $product_id]);
+
+    price_from_cheapest($pdo, $product_id);
     return $counts;
 }
 
@@ -444,7 +627,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$_POST && (int)($_SERVER['CONTENT_
 $state = list_state($_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET);
 $state_fields = '<input type="hidden" name="type" value="' . e($state['type']) . '">'
     . '<input type="hidden" name="sort" value="' . e($state['sort']) . '">'
-    . '<input type="hidden" name="q" value="' . e($state['q']) . '" data-list-q>';
+    . '<input type="hidden" name="q" value="' . e($state['q']) . '" data-list-q>'
+    . '<input type="hidden" name="cats" value="' . e($state['cats']) . '" data-list-cats>';
 
 $errors = [];
 $form = null;
@@ -462,7 +646,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'add') {
-        [$form, $errors, $with_specs] = read_full_form($_POST, $categories);
+        [$form, $errors, $with_specs, , $with_options] = read_full_form($_POST, $categories);
         $form['id'] = 0;
         $form['is_active'] = isset($_POST['is_active']);
         if (!$errors) {
@@ -477,6 +661,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($with_specs) {
                 save_specs($pdo, $new_id, $form['specs']);
                 $added = save_variants($pdo, $new_id, $form['variants'])[0];
+            } elseif ($with_options) {
+                $added = save_options($pdo, $new_id, $form['options'])[0];
             }
             $pdo->commit();
 
@@ -605,7 +791,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'save') {
-        [$form, $errors, $with_specs, $price_from_variants] = read_full_form($_POST, $categories, variant_count($pdo, $id) > 0);
+        [$form, $errors, $with_specs, $price_from_variants, $with_options] = read_full_form($_POST, $categories, variant_count($pdo, $id) > 0);
         $form['id'] = $id;
 
         if (!$errors) {
@@ -623,6 +809,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($with_specs) {
                 save_specs($pdo, $id, $form['specs']);
                 $changes = save_variants($pdo, $id, $form['variants']);
+                $pdo->prepare('UPDATE products SET option_groups = NULL WHERE id = ?')->execute([$id]);
+            } elseif ($with_options) {
+                $changes = save_options($pdo, $id, $form['options']);
             }
             $moved = (int)$to['id'] !== (int)($from['id'] ?? 0);
             if ($moved) {
@@ -634,6 +823,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $note = variant_note($changes);
             $done = array_filter([$note ? "variants: $note" : '', $moved ? 'moved to ' . $to['name'] : '']);
             flash('success', $form['name'] . ' was saved' . ($done ? ' (' . implode('; ', $done) . ')' : '') . '.');
+            // Back to the list showing the product's own category (its tab, with that category ticked), sort kept
+            $state = ['type' => product_group($to['slug']), 'sort' => $state['sort'], 'q' => '', 'cats' => (string)$to['slug']];
             back_to_list($id);
         }
         // Errors: fall through and show the form again with what was typed
@@ -646,7 +837,7 @@ unset($_SESSION['flash']);
 // ── Add form (GET ?add=1, or an add that failed validation) ─────────
 if (!$form && isset($_GET['add'])) {
     $adding = true;
-    $form = ['id' => 0, 'name' => '', 'category_id' => 0, 'price' => '', 'stock' => '10', 'video_url' => '', 'is_active' => false, 'specs' => read_specs([]), 'variants' => []];
+    $form = ['id' => 0, 'name' => '', 'category_id' => 0, 'price' => '', 'stock' => '10', 'video_url' => '', 'is_active' => false, 'specs' => read_specs([]), 'variants' => [], 'options' => ['groups' => [], 'rows' => []]];
 }
 
 // ── Edit form (GET ?edit=ID, or a POST that failed validation) ──────
@@ -675,9 +866,11 @@ if ($edit_id) {
             'specs'       => read_specs(['ram' => $editing['spec_ram'], 'storage' => $editing['spec_storage']] + $editing),
             'variants'    => variants_of($pdo, $edit_id),
         ];
+        $form['options'] ??= options_from($editing['option_groups'], $form['variants']);
         // A failed save of an accessory posts no specs/variants, but the sections appear if the category is switched to a PC
         $form['specs']    ??= read_specs([]);
         $form['variants'] ??= [];
+        $form['options']  ??= ['groups' => [], 'rows' => []];
     }
 }
 
@@ -747,14 +940,15 @@ admin_open('Products', 'products');
         <?php endif; ?>
 
         <?php
-        // Specs and variants are for PCs and laptops (shown too while a new product has no category yet)
-        $show_specs = !$form['category_id'] || has_specs(find_category($categories, $form['category_id']));
-        // One spare empty row, so a variant can be added even without JavaScript
+        // Specs, YouTube and RAM/SSD variants are for PCs and laptops (shown too while a new product has no category yet);
+        // accessories get their own Variants section instead: an option name, price and stock
+        $show_specs   = !$form['category_id'] || has_specs(find_category($categories, $form['category_id']));
+        $show_options = !$show_specs;
+        // One spare empty row each, so a variant can be added even without JavaScript
         $variant_rows = [...$form['variants'], ['id' => 0, 'ram' => '', 'storage' => '', 'set_type' => 'cpu_only', 'gpu' => '', 'price' => '', 'stock' => '10', 'remove' => false]];
         // With variants the price is the cheapest one's: shown in the price box, which is then locked
-        $variant_prices = array_map(fn($v) => (float)$v['price'], array_filter($form['variants'], fn($v) => !$v['remove'] && is_numeric($v['price']) && $v['price'] > 0));
-        $keep_locked = !$adding && !$show_specs && $editing['variant_count']; // an accessory with variants
-        $price_locked = $variant_prices || $keep_locked;
+        $variant_prices = array_map(fn($v) => (float)$v['price'], array_filter($show_specs ? $form['variants'] : $form['options']['rows'], fn($v) => !($v['remove'] ?? false) && is_numeric($v['price']) && $v['price'] > 0));
+        $price_locked = (bool)$variant_prices;
         ?>
         <form method="POST" action="products.php" class="ap-form" data-product-form>
             <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
@@ -786,7 +980,7 @@ admin_open('Products', 'products');
             <label>
                 <span>Price (RM)</span>
                 <input type="number" name="price" value="<?= e($variant_prices ? number_format(min($variant_prices), 2, '.', '') : $form['price']) ?>" min="0" step="0.01" placeholder="0.00"
-                       data-price<?= $keep_locked ? ' data-keep-locked' : '' ?><?= $price_locked ? ' readonly' : ' required' ?>>
+                       data-price<?= $price_locked ? ' readonly' : ' required' ?>>
                 <small data-price-hint><?= $price_locked ? 'The cheapest variant. Change prices in Variants below.' : 'Once you add variants below, the price follows the cheapest one.' ?></small>
             </label>
 
@@ -795,11 +989,13 @@ admin_open('Products', 'products');
                 <input type="number" name="stock" value="<?= e($form['stock']) ?>" min="0" step="1" required>
             </label>
 
-            <label class="ap-wide">
-                <span>YouTube link</span>
-                <input type="url" name="video_url" value="<?= e($form['video_url']) ?>" placeholder="https://youtu.be/...">
-                <small>Performance video shown on the product page. Leave empty for none.</small>
-            </label>
+            <fieldset class="ap-plain ap-wide" data-needs-specs<?= $show_specs ? '' : ' hidden disabled' ?>>
+                <label>
+                    <span>YouTube link</span>
+                    <input type="url" name="video_url" value="<?= e($form['video_url']) ?>" placeholder="https://youtu.be/...">
+                    <small>Performance video shown on the product page. Leave empty for none.</small>
+                </label>
+            </fieldset>
 
             <?php // Disabled fieldsets aren't submitted, so an accessory's save leaves specs and variants alone ?>
             <fieldset class="ap-section ap-wide" id="specs" data-needs-specs<?= $show_specs ? '' : ' hidden disabled' ?>>
@@ -815,7 +1011,7 @@ admin_open('Products', 'products');
                 </div>
             </fieldset>
 
-            <fieldset class="ap-section ap-wide" id="variants" data-needs-specs<?= $show_specs ? '' : ' hidden disabled' ?>>
+            <fieldset class="ap-section ap-wide" id="variants" data-needs-specs data-variant-table="variants"<?= $show_specs ? '' : ' hidden disabled' ?>>
                 <legend>Variants</legend>
                 <p class="ap-section-note">
                     The RAM/SSD, set and graphics card options customers pick from. The cheapest one is the "From" price.
@@ -878,7 +1074,35 @@ admin_open('Products', 'products');
                         </tbody>
                     </table>
                 </div>
-                <button type="button" class="btn btn-sm btn-outline ap-add-variant" data-add-variant hidden>＋ Add variant</button>
+                <button type="button" class="btn btn-sm btn-outline ap-add-variant" data-add-row hidden>＋ Add variant</button>
+            </fieldset>
+
+            <fieldset class="ap-section ap-wide" id="options" data-needs-options<?= $show_options ? '' : ' hidden disabled' ?>>
+                <legend>Variants</legend>
+                <p class="ap-section-note">
+                    Add a variation type, such as Colour or Fabric, and its options. Every combination becomes a variant
+                    with its own price and stock, and the cheapest is the "From" price. Leave empty if there's only one version.
+                </p>
+                <input type="hidden" name="options[on]" value="1">
+                <div class="ov-types" data-option-types></div>
+                <button type="button" class="btn btn-sm btn-outline ap-add-variant" data-add-type>＋ Add variation type</button>
+
+                <div class="ov-table" data-option-table hidden>
+                    <div class="ov-apply">
+                        <span>Apply to all</span>
+                        <input type="number" min="0" step="0.01" placeholder="Price (RM)" aria-label="Price for every variant" data-all-price>
+                        <input type="number" min="0" step="1" placeholder="Stock" aria-label="Stock for every variant" data-all-stock>
+                        <button type="button" class="btn btn-sm" data-apply-all>Apply</button>
+                    </div>
+                    <div class="ap-table-wrap ap-variants-wrap">
+                        <table class="ap-variants ap-options">
+                            <thead data-option-head></thead>
+                            <tbody data-option-rows></tbody>
+                        </table>
+                    </div>
+                </div>
+                <script type="application/json" data-option-state><?= json_encode($form['options'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?></script>
+                <noscript><p class="ap-section-note">Switch JavaScript on to edit variants.</p></noscript>
             </fieldset>
 
             <?php if ($adding): ?>
@@ -899,69 +1123,224 @@ admin_open('Products', 'products');
     <script>
     (() => {
         const form = document.querySelector('[data-product-form]');
-        const rows = form.querySelector('[data-variant-rows]');
-        const variants = form.querySelector('#variants');
         const price = form.querySelector('[data-price]');
         const hint = form.querySelector('[data-price-hint]');
         const money = n => 'RM ' + n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         // Same flat formula as jcl_monthly(): 1.25% a month over 36 months
         const jcl = price => Math.round(price * (1 + 0.0125 * 36) / 36 * 100) / 100;
+        // PC and laptop variants (#variants): rows added and removed here. Accessory variants (#options): further down
+        const tables = [...form.querySelectorAll('[data-variant-table]')].map(fs => ({ fs, rows: fs.querySelector('[data-variant-rows]'), prefix: fs.dataset.variantTable }));
 
+        // Prices from whichever Variants section is switched on (a disabled fieldset isn't sent)
         const refresh = () => {
             const prices = [];
-            rows.querySelectorAll('tr').forEach(tr => {
-                const price = parseFloat(tr.querySelector('[data-variant-price]').value);
-                const removed = tr.querySelector('.ap-remove input:checked');
-                tr.querySelector('[data-jcl]').textContent = price > 0 ? money(jcl(price)) : '—';
-                if (price > 0 && !removed) prices.push(price);
+            form.querySelectorAll('[data-variant-price]').forEach(input => {
+                const value = parseFloat(input.value);
+                const tr = input.closest('tr');
+                const cell = tr.querySelector('[data-jcl]');
+                if (cell) cell.textContent = value > 0 ? money(jcl(value)) : '—';
+                if (!input.closest('fieldset').disabled && value > 0 && !tr.querySelector('.ap-remove input:checked')) prices.push(value);
             });
             // The price box follows the cheapest variant, and is locked while there are any
-            if (price.hasAttribute('data-keep-locked')) return;
-            const locked = !variants.disabled && prices.length > 0;
+            const locked = prices.length > 0;
             if (locked) price.value = Math.min(...prices).toFixed(2);
             price.readOnly = locked;
             price.required = !locked;
             hint.textContent = locked ? 'The cheapest variant. Change prices in Variants below.' : 'Once you add variants below, the price follows the cheapest one.';
         };
-        rows.addEventListener('input', refresh);
-        rows.addEventListener('change', refresh);
 
-        // ✕ on a new row: drop it (the last spare row is only emptied, so there's always one to copy)
-        rows.addEventListener('click', e => {
-            const x = e.target.closest('[data-remove-row]');
-            if (!x) return;
-            const row = x.closest('tr');
-            if (rows.querySelectorAll('tr.is-new').length > 1) {
-                row.remove();
-            } else {
-                row.querySelectorAll('input:not([type=hidden])').forEach(el => { el.value = el.name.endsWith('[stock]') ? '10' : ''; });
-                row.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
-            }
-            refresh();
-        });
+        tables.forEach(({ fs, rows, prefix }) => {
+            rows.addEventListener('input', refresh);
+            rows.addEventListener('change', refresh);
 
-        // New row: a copy of the empty spare row with the next index (variants[7][ram] …)
-        const add = form.querySelector('[data-add-variant]');
-        add.hidden = false;
-        add.addEventListener('click', () => {
-            const spare = rows.querySelector('tr.is-new:last-child');
-            const row = spare.cloneNode(true);
-            const next = rows.children.length;
-            row.querySelectorAll('[name]').forEach(el => {
-                el.name = el.name.replace(/^variants\[\d+\]/, `variants[${next}]`);
-                if (el.tagName === 'SELECT') el.selectedIndex = 0;
-                else if (el.type !== 'hidden') el.value = el.name.endsWith('[stock]') ? '10' : '';
+            // ✕ on a new row: drop it (the last spare row is only emptied, so there's always one to copy)
+            rows.addEventListener('click', e => {
+                const x = e.target.closest('[data-remove-row]');
+                if (!x) return;
+                const row = x.closest('tr');
+                if (rows.querySelectorAll('tr.is-new').length > 1) {
+                    row.remove();
+                } else {
+                    row.querySelectorAll('input:not([type=hidden])').forEach(el => { el.value = el.name.endsWith('[stock]') ? '10' : ''; });
+                    row.querySelectorAll('select').forEach(el => { el.selectedIndex = 0; });
+                }
+                refresh();
             });
-            rows.appendChild(row);
-            refresh();
-            row.querySelector('select').focus();
+
+            // New row: a copy of the empty spare row with an unused index (variants[7][ram], options[3][name] …)
+            const add = fs.querySelector('[data-add-row]');
+            add.hidden = false;
+            add.addEventListener('click', () => {
+                const spare = rows.querySelector('tr.is-new:last-child');
+                const row = spare.cloneNode(true);
+                const used = [...rows.querySelectorAll('[name$="[id]"]')].map(el => Number(el.name.match(/\[(\d+)\]/)[1]));
+                const next = Math.max(-1, ...used) + 1;
+                row.querySelectorAll('[name]').forEach(el => {
+                    el.name = el.name.replace(new RegExp('^' + prefix + '\\[\\d+\\]'), `${prefix}[${next}]`);
+                    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+                    else if (el.type !== 'hidden') el.value = el.name.endsWith('[stock]') ? '10' : '';
+                });
+                rows.appendChild(row);
+                refresh();
+                row.querySelector('select, input:not([type=hidden])').focus();
+            });
         });
 
-        // Specs and variants only apply to PCs and laptops; disabled fieldsets aren't sent
+        // Accessory variants: variation types (Colour, Fabric …) and a price / stock row for every combination of their options
+        const ov = form.querySelector('#options');
+        (() => {
+            const MAX_TYPES = <?= OPTION_TYPES_MAX ?>, MAX_VALUES = <?= OPTION_VALUES_MAX ?>;
+            const state = JSON.parse(ov.querySelector('[data-option-state]').textContent);
+            const typesBox = ov.querySelector('[data-option-types]');
+            const tableBox = ov.querySelector('[data-option-table]');
+            const head = ov.querySelector('[data-option-head]');
+            const body = ov.querySelector('[data-option-rows]');
+            const addType = ov.querySelector('[data-add-type]');
+            const make = (tag, props = {}, attrs = {}, ...kids) => {
+                const node = Object.assign(document.createElement(tag), props);
+                Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+                node.append(...kids);
+                return node;
+            };
+
+            // Each option gets an id of its own, so a row's price and stock stay with it when "Red" is renamed "Merah"
+            let uid = 0;
+            const types = state.groups.map(g => ({ name: g.name, values: g.values.map(text => ({ uid: ++uid, text })) }));
+            const rowData = new Map();
+            state.rows.forEach(r => {
+                const uids = r.values.map((text, i) => types[i]?.values.find(v => v.text.toLowerCase() === String(text).toLowerCase())?.uid);
+                if (uids.length === types.length && uids.every(Boolean)) rowData.set(uids.join('-'), { id: r.id, price: r.price, stock: r.stock });
+            });
+
+            function renderTypes() {
+                typesBox.replaceChildren();
+                types.forEach((t, ti) => {
+                    const name = make('input', { type: 'text', value: t.name, maxLength: <?= OPTION_TYPE_MAX ?>, name: `options[groups][${ti}][name]`, placeholder: ['e.g. Colour', 'e.g. Fabric', 'e.g. Size'][ti] }, { 'aria-label': `Variation ${ti + 1} name` });
+                    name.addEventListener('input', () => { t.name = name.value; renderTable(); });
+                    const drop = make('button', { type: 'button', className: 'ov-remove-type', textContent: 'Remove type' });
+                    drop.addEventListener('click', () => { types.splice(ti, 1); renderTypes(); renderTable(); });
+
+                    const values = make('div', { className: 'ov-values' });
+                    t.values.forEach((v, vi) => {
+                        const input = make('input', { type: 'text', value: v.text, maxLength: <?= OPTION_MAX ?>, name: `options[groups][${ti}][values][]`, placeholder: 'Option' }, { 'aria-label': `Variation ${ti + 1} option ${vi + 1}` });
+                        input.addEventListener('input', () => { v.text = input.value; renderTable(); });
+                        const x = make('button', { type: 'button', className: 'ap-row-x', textContent: '✕', title: 'Remove this option' }, { 'aria-label': 'Remove this option' });
+                        x.addEventListener('click', () => { t.values.splice(vi, 1); renderTypes(); renderTable(); });
+                        values.append(make('span', { className: 'ov-value' }, {}, input, x));
+                    });
+                    if (t.values.length < MAX_VALUES) {
+                        const more = make('button', { type: 'button', className: 'ov-add-value', textContent: '＋ Add option' });
+                        more.addEventListener('click', () => {
+                            t.values.push({ uid: ++uid, text: '' });
+                            renderTypes();
+                            renderTable();
+                            [...typesBox.children][ti].querySelector('.ov-value:last-of-type input').focus();
+                        });
+                        values.append(more);
+                    }
+                    typesBox.append(make('div', { className: 'ov-type' }, {},
+                        make('div', { className: 'ov-type-head' }, {}, make('span', { className: 'ov-type-label', textContent: `Variation ${ti + 1}` }), name, drop),
+                        values));
+                });
+                addType.hidden = types.length >= MAX_TYPES;
+            }
+
+            // Keep what's been typed in the table before it's drawn again
+            function harvest() {
+                body.querySelectorAll('tr[data-key]').forEach(tr => {
+                    rowData.set(tr.dataset.key, {
+                        id: Number(tr.querySelector('[name$="[id]"]').value),
+                        price: tr.querySelector('[data-variant-price]').value,
+                        stock: tr.querySelector('[data-stock]').value,
+                    });
+                });
+            }
+
+            // A row's price and stock; a new combination starts from the row it grew out of
+            function lookup(key) {
+                if (rowData.has(key)) return rowData.get(key);
+                const parts = key.split('-');
+                // A type was added: Red → Red · PU Leather and Red · PU
+                for (let n = parts.length - 1; n > 0; n--) {
+                    const d = rowData.get(parts.slice(0, n).join('-'));
+                    if (d) return d;
+                }
+                // A type was removed: Red · PU Leather → Red
+                for (const [k, d] of rowData) {
+                    if (k.startsWith(key + '-')) return d;
+                }
+                return {};
+            }
+
+            function renderTable() {
+                harvest();
+                const filled = types.map(t => t.values.filter(v => v.text.trim() !== ''));
+                const on = types.length > 0 && filled.every(vs => vs.length > 0);
+                tableBox.hidden = !on;
+                head.replaceChildren();
+                body.replaceChildren();
+                if (on) {
+                    head.append(make('tr', {}, {},
+                        ...types.map((t, i) => make('th', { textContent: t.name.trim() || `Variation ${i + 1}` })),
+                        make('th', { textContent: 'Price (RM)' }), make('th', { textContent: 'Stock' })));
+                    let combos = [[]];
+                    filled.forEach(vs => { combos = combos.flatMap(c => vs.map(v => [...c, v])); });
+                    // The first type's option spans its rows, like Shopee's table
+                    const span = combos.length / filled[0].length;
+                    // A variant id goes to one row only (the others are new variants)
+                    const claimed = new Set();
+                    combos.forEach((combo, k) => {
+                        const key = combo.map(v => v.uid).join('-');
+                        const found = lookup(key);
+                        const d = { ...found, id: found.id && !claimed.has(found.id) ? found.id : 0 };
+                        claimed.add(d.id);
+                        const tr = make('tr', {}, { 'data-key': key });
+                        combo.forEach((v, i) => {
+                            if (i === 0 && types.length > 1) {
+                                if (k % span === 0) tr.append(make('td', { className: 'ov-cell ov-first', textContent: v.text.trim(), rowSpan: span }));
+                            } else {
+                                tr.append(make('td', { className: 'ov-cell', textContent: v.text.trim() }));
+                            }
+                        });
+                        tr.append(
+                            make('td', {}, {},
+                                make('input', { type: 'hidden', name: `options[combos][${k}][id]`, value: d.id || 0 }),
+                                make('input', { type: 'hidden', name: `options[combos][${k}][values]`, value: JSON.stringify(combo.map(v => v.text.trim())) }),
+                                make('input', { type: 'number', name: `options[combos][${k}][price]`, value: d.price ?? '', min: 0, step: '0.01', placeholder: '0.00' }, { 'aria-label': 'Price', 'data-variant-price': '' })),
+                            make('td', {}, {},
+                                make('input', { type: 'number', name: `options[combos][${k}][stock]`, value: d.stock ?? '10', min: 0, step: 1 }, { 'aria-label': 'Stock', 'data-stock': '' })));
+                        body.append(tr);
+                    });
+                }
+                refresh();
+            }
+
+            addType.addEventListener('click', () => {
+                types.push({ name: '', values: [{ uid: ++uid, text: '' }] });
+                renderTypes();
+                renderTable();
+                typesBox.lastElementChild.querySelector('input').focus();
+            });
+            body.addEventListener('input', refresh);
+            ov.querySelector('[data-apply-all]').addEventListener('click', () => {
+                const allPrice = ov.querySelector('[data-all-price]').value;
+                const allStock = ov.querySelector('[data-all-stock]').value;
+                body.querySelectorAll('tr').forEach(tr => {
+                    if (allPrice !== '') tr.querySelector('[data-variant-price]').value = allPrice;
+                    if (allStock !== '') tr.querySelector('[data-stock]').value = allStock;
+                });
+                refresh();
+            });
+            renderTypes();
+            renderTable();
+        })();
+
+        // PCs and laptops: specs, YouTube and RAM/SSD variants. Accessories: their variation types. Disabled fieldsets aren't sent
         const category = form.querySelector('[name=category_id]');
         category.addEventListener('change', () => {
-            const on = category.selectedOptions[0]?.dataset.specs === '1';
-            form.querySelectorAll('[data-needs-specs]').forEach(fs => { fs.hidden = !on; fs.disabled = !on; });
+            const pc = category.selectedOptions[0]?.dataset.specs === '1';
+            form.querySelectorAll('[data-needs-specs]').forEach(fs => { fs.hidden = !pc; fs.disabled = !pc; });
+            form.querySelectorAll('[data-needs-options]').forEach(fs => { fs.hidden = pc; fs.disabled = pc; });
             refresh();
         });
     })();
@@ -1076,7 +1455,7 @@ admin_open('Products', 'products');
         <nav class="category-filter ap-tabs" aria-label="Product type">
             <?php foreach (LIST_TYPES as $key => $label): ?>
             <?php if ($key === 'accessory' && !$counts['accessory']) continue; ?>
-            <a href="<?= e(list_url(['type' => $key, 'sort' => $state['sort'], 'q' => $state['q']])) ?>" data-tab-type="<?= $key ?>" class="chip<?= $state['type'] === $key ? ' active' : '' ?>"<?= $state['type'] === $key ? ' aria-current="page"' : '' ?>>
+            <a href="<?= e(list_url(['type' => $key, 'sort' => $state['sort'], 'q' => $state['q'], 'cats' => ''])) ?>" data-tab-type="<?= $key ?>" class="chip<?= $state['type'] === $key ? ' active' : '' ?>"<?= $state['type'] === $key ? ' aria-current="page"' : '' ?>>
                 <?= $label ?> <span class="ap-tab-count"><?= $counts[$key] ?></span>
             </a>
             <?php endforeach; ?>
@@ -1086,6 +1465,7 @@ admin_open('Products', 'products');
             <span aria-hidden="true">🔍</span>
             <input type="search" name="q" value="<?= e($state['q']) ?>" placeholder="Search name, category, CPU or GPU" aria-label="Search products" autocomplete="off" id="productSearch">
         </label>
+        <input type="hidden" name="cats" value="<?= e($state['cats']) ?>" data-list-cats>
         <label class="ap-sort">
             <span>Sort</span>
             <select name="sort" onchange="this.form.submit()">
@@ -1097,8 +1477,42 @@ admin_open('Products', 'products');
         <noscript><button type="submit" class="btn btn-sm">Apply</button></noscript>
     </form>
 
+    <?php
+    // Filter boxes: the categories in this tab that have products, with how many each
+    $picked = array_filter(explode(',', $state['cats']));
+    $cat_counts = array_count_values(array_map(fn($p) => (string)$p['category_slug'], $shown));
+    $filter_groups = [];
+    foreach (['pc' => 'Narrow by PC type', 'laptop' => 'Laptops', 'accessory' => 'Narrow by accessory type'] as $group => $heading) {
+        if ($state['type'] !== 'all' && $state['type'] !== $group) continue;
+        $items = array_filter($categories[$group], fn($c) => ($cat_counts[$c['slug']] ?? 0) > 0);
+        if ($items) $filter_groups[$heading] = $items;
+    }
+    $in_list = fn($p) => !$picked || in_array((string)$p['category_slug'], $picked, true);
+    ?>
+    <div class="ap-list">
+    <?php if ($filter_groups): ?>
+    <aside class="ap-filters" aria-label="Filter by category">
+        <div class="ap-filters-head">
+            <strong>Filter</strong>
+            <button type="button" class="ap-filters-clear" data-cat-clear<?= $picked ? '' : ' hidden' ?>>Clear</button>
+        </div>
+        <?php foreach ($filter_groups as $heading => $items): ?>
+        <fieldset class="ap-filter-group">
+            <legend><?= $heading ?></legend>
+            <?php foreach ($items as $c): ?>
+            <label class="ap-filter-item">
+                <input type="checkbox" value="<?= e($c['slug']) ?>" data-cat-filter<?= in_array($c['slug'], $picked, true) ? ' checked' : '' ?>>
+                <span><?= e($c['name']) ?></span>
+                <em><?= $cat_counts[$c['slug']] ?></em>
+            </label>
+            <?php endforeach; ?>
+        </fieldset>
+        <?php endforeach; ?>
+    </aside>
+    <?php endif; ?>
+
     <div class="ap-table-wrap">
-        <table class="ap-table">
+        <table class="ap-table<?= $state['q'] !== '' || $picked ? ' is-searching' : '' ?>">
             <thead>
                 <tr>
                     <th>Active</th>
@@ -1115,12 +1529,24 @@ admin_open('Products', 'products');
             <?php if (!$shown): ?>
             <tbody><tr><td colspan="9" class="ap-empty">No products here yet.</td></tr></tbody>
             <?php endif; ?>
-            <tbody data-no-match hidden><tr><td colspan="9" class="ap-empty">No products match “<span data-no-match-text></span>”.</td></tr></tbody>
+            <tbody data-no-match hidden><tr><td colspan="9" class="ap-empty" data-no-match-text>No products match.</td></tr></tbody>
             <?php foreach ($sections as $group => [$icon, $label]): ?>
             <?php if (!$grouped[$group]) continue; ?>
-            <tbody data-section>
-                <?php if ($state['type'] === 'all'): ?>
-                <tr class="ap-section"><th colspan="9"><?= $icon ?> <?= $label ?> <span data-section-count><?= count($grouped[$group]) ?></span></th></tr>
+            <?php
+            // On the All tab each section folds up behind its header (open while one of its products is being edited)
+            $foldable = $state['type'] === 'all';
+            $open = !$foldable || ($editing && in_array((int)$editing['id'], array_map('intval', array_column($grouped[$group], 'id')), true));
+            ?>
+            <tbody data-section<?= $foldable ? ' data-group="' . $group . '"' : '' ?><?= $open ? '' : ' class="is-collapsed"' ?>>
+                <?php if ($foldable): ?>
+                <tr class="ap-section">
+                    <th colspan="9">
+                        <button type="button" class="ap-section-toggle" data-section-toggle aria-expanded="<?= $open ? 'true' : 'false' ?>">
+                            <span class="ap-section-label"><?= $icon ?> <?= $label ?> <span data-section-count><?= count($grouped[$group]) ?></span></span>
+                            <svg class="ap-section-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                    </th>
+                </tr>
                 <?php endif; ?>
                 <?php foreach ($grouped[$group] as $p): ?>
                 <?php
@@ -1132,7 +1558,7 @@ admin_open('Products', 'products');
                 $missing = fn(string $field) => isset($issues[$field]) ? ' is-missing' : '';
                 ?>
                 <tr id="p-<?= (int)$p['id'] ?>" class="<?= $p['is_active'] ? '' : 'is-hidden' ?><?= $editing && $editing['id'] == $p['id'] ? ' is-editing' : '' ?><?= $issues ? ' has-issues' : '' ?>"
-                    data-search="<?= e(search_text($p)) ?>"<?= $state['q'] !== '' && !matches_search($p, $state['q']) ? ' hidden' : '' ?>
+                    data-search="<?= e(search_text($p)) ?>" data-cat="<?= e((string)$p['category_slug']) ?>"<?= ($state['q'] !== '' && !matches_search($p, $state['q'])) || !$in_list($p) ? ' hidden' : '' ?>
                     <?= $issues ? 'title="' . e('Missing: ' . implode('; ', array_column($issues, 1))) . '"' : '' ?>>
                     <td>
                         <form method="POST" action="products.php">
@@ -1161,7 +1587,7 @@ admin_open('Products', 'products');
                         <?php if (isset($issues['photo'])): ?>
                         <small class="ap-missing-text">No photo<?= $p['image'] ? ' (' . e($p['image']) . ' not found)' : '' ?></small>
                         <?php else: ?>
-                        <small><?= e($p['image']) ?><?= $p['photo_count'] > 1 ? ' · ' . (int)$p['photo_count'] . ' photos' : '' ?></small>
+                        <small title="<?= e($p['image']) ?>"><?= e($p['image']) ?><?= $p['photo_count'] > 1 ? ' · ' . (int)$p['photo_count'] . ' photos' : '' ?></small>
                         <?php endif; ?>
                     </td>
                     <td><span class="ap-cat"><?= e($p['category_name'] ?? '—') ?></span></td>
@@ -1190,9 +1616,7 @@ admin_open('Products', 'products');
                     <td>
                         <div class="ap-actions">
                             <a href="<?= e(list_url($state, ['edit' => (int)$p['id']])) ?>#edit" class="btn btn-sm ap-btn-edit">Edit</a>
-                            <?php if ($p['variant_count'] || $p['group'] !== 'accessory'): ?>
-                            <a href="<?= e(list_url($state, ['edit' => (int)$p['id']])) ?>#variants" class="btn btn-sm ap-btn-variants">Variants</a>
-                            <?php endif; ?>
+                            <a href="<?= e(list_url($state, ['edit' => (int)$p['id']])) ?>#<?= $p['group'] === 'accessory' ? 'options' : 'variants' ?>" class="btn btn-sm ap-btn-variants">Variants</a>
                             <a href="../pages/product.php?id=<?= (int)$p['id'] ?>" class="btn btn-sm ap-btn-view" target="_blank" rel="noopener" title="View on the store">View</a>
                             <form method="POST" action="products.php"
                                   onsubmit="return confirm(<?= e(json_encode('Delete ' . $p['name'] . '? Its specs, images and variants are deleted too. This cannot be undone.')) ?>)">
@@ -1210,41 +1634,55 @@ admin_open('Products', 'products');
             <?php endforeach; ?>
         </table>
     </div>
+    </div>
 </div>
 
 <script>
-// Search as you type: rows are filtered straight away, and the search is kept in the URL, the tab links
-// and every form on the page so it survives Edit, Live/Hidden, Delete and changing tab or sort
+// Search as you type and the category boxes: rows are filtered straight away, and both are kept in the URL, the tab links
+// and every form on the page so they survive Edit, Live/Hidden, Delete and changing tab or sort
 (() => {
     const box = document.getElementById('productSearch');
     if (!box) return;
     const rows = [...document.querySelectorAll('tr[data-search]')];
     const noMatch = document.querySelector('[data-no-match]');
+    const boxes = [...document.querySelectorAll('[data-cat-filter]')];
+    const clear = document.querySelector('[data-cat-clear]');
 
     function apply() {
         const q = box.value.trim();
         const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+        const cats = boxes.filter(b => b.checked).map(b => b.value);
         let shown = 0;
         rows.forEach(tr => {
-            const hit = words.every(w => tr.dataset.search.includes(w));
+            const hit = words.every(w => tr.dataset.search.includes(w)) && (!cats.length || cats.includes(tr.dataset.cat));
             tr.hidden = !hit;
             if (hit) shown++;
         });
+        if (clear) clear.hidden = !cats.length;
+        document.querySelectorAll('[data-list-cats]').forEach(input => { input.value = cats.join(','); });
         document.querySelectorAll('tbody[data-section]').forEach(tb => {
             const visible = tb.querySelectorAll('tr[data-search]:not([hidden])').length;
             tb.hidden = visible === 0;
             const count = tb.querySelector('[data-section-count]');
             if (count) count.textContent = visible;
         });
+        // While searching or filtering, every section with a match is shown open
+        box.closest('.ap-page').querySelector('.ap-table').classList.toggle('is-searching', q !== '' || cats.length > 0);
         noMatch.hidden = shown > 0 || rows.length === 0;
-        noMatch.querySelector('[data-no-match-text]').textContent = q;
+        noMatch.querySelector('[data-no-match-text]').textContent = q
+            ? `No products match “${q}”${cats.length ? ' in the ticked categories' : ''}.`
+            : 'No products in the ticked categories.';
 
         document.querySelectorAll('[data-list-q]').forEach(input => { input.value = q; });
         const setQ = url => { q ? url.searchParams.set('q', q) : url.searchParams.delete('q'); return url; };
         document.querySelectorAll('a[data-tab-type]').forEach(a => { a.href = setQ(new URL(a.href)).href; });
-        history.replaceState(null, '', setQ(new URL(location.href)).href);
+        const here = setQ(new URL(location.href));
+        cats.length ? here.searchParams.set('cats', cats.join(',')) : here.searchParams.delete('cats');
+        history.replaceState(null, '', here.href);
     }
     box.addEventListener('input', apply);
+    boxes.forEach(b => b.addEventListener('change', apply));
+    if (clear) clear.addEventListener('click', () => { boxes.forEach(b => { b.checked = false; }); apply(); });
     // Enter stays on the page (the list is already filtered)
     box.form.addEventListener('submit', e => { if (document.activeElement === box) { e.preventDefault(); apply(); } });
     // "/" jumps to the search box, Esc clears it
@@ -1252,7 +1690,39 @@ admin_open('Products', 'products');
         if (e.key === '/' && !e.target.closest('input, textarea, select, [contenteditable]')) { e.preventDefault(); box.focus(); box.select(); }
     });
     box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.value) { box.value = ''; apply(); } });
-    if (box.value) apply();
+    if (box.value || boxes.some(b => b.checked)) apply();
+})();
+
+// All tab: PCs / Laptops / Accessories fold up behind their headers. Which ones are open is remembered in this browser
+(() => {
+    const KEY = 'pixelcraft-admin-open-sections';
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) {}
+    const sections = [...document.querySelectorAll('tbody[data-group]')];
+
+    function setOpen(tb, open) {
+        tb.classList.toggle('is-collapsed', !open);
+        tb.querySelector('[data-section-toggle]').setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function remember() {
+        try { localStorage.setItem(KEY, JSON.stringify(sections.filter(tb => !tb.classList.contains('is-collapsed')).map(tb => tb.dataset.group))); } catch (e) {}
+    }
+    sections.forEach(tb => {
+        if (saved.includes(tb.dataset.group)) setOpen(tb, true);
+        tb.querySelector('[data-section-toggle]').addEventListener('click', () => {
+            setOpen(tb, tb.classList.contains('is-collapsed'));
+            remember();
+        });
+    });
+
+    // Back from a save, delete or Live toggle (products.php#p-12): open that product's section and scroll to it
+    const target = location.hash.startsWith('#p-') && document.getElementById(location.hash.slice(1));
+    const section = target && target.closest('tbody[data-group]');
+    if (section && section.classList.contains('is-collapsed')) {
+        setOpen(section, true);
+        remember();
+        target.scrollIntoView({ block: 'center' });
+    }
 })();
 </script>
 <?php admin_close(); ?>

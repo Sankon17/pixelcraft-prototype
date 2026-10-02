@@ -127,9 +127,9 @@ require 'includes/header.php';
     </div>
     <div class="category-scroller">
         <a href="pages/pc-categories.php" class="cat-tile cat-tile-feature">
-            <?php $img = category_image($base, 'custom-pcs'); ?>
-            <div class="cat-media"<?= $img ? ' style="background-image:url(\'' . e($img) . '\')"' : '' ?>>
-                <?php if (!$img): ?><span class="cat-icon">🖥️</span><?php endif; ?>
+            <?php $img = category_photo($pdo, $base, 'custom-pcs'); ?>
+            <div class="cat-media">
+                <?php if ($img): ?><img src="<?= e($img) ?>" alt="" class="cat-photo" loading="lazy"><?php else: ?><span class="cat-icon">🖥️</span><?php endif; ?>
             </div>
             <div class="cat-info">
                 <span class="cat-label">Custom PCs</span>
@@ -138,10 +138,11 @@ require 'includes/header.php';
             </div>
         </a>
         <?php foreach ($accessories as $cat): ?>
-        <?php $img = category_image($base, $cat['slug']); ?>
+        <?php if (!$cat['product_count']) continue; // only categories with something on sale ?>
+        <?php $img = category_photo($pdo, $base, $cat['slug']); ?>
         <a href="pages/products.php?cat=<?= urlencode($cat['slug']) ?>" class="cat-tile">
-            <div class="cat-media"<?= $img ? ' style="background-image:url(\'' . e($img) . '\')"' : '' ?>>
-                <?php if (!$img): ?><span class="cat-icon"><?= category_icon($cat['slug']) ?></span><?php endif; ?>
+            <div class="cat-media">
+                <?php if ($img): ?><img src="<?= e($img) ?>" alt="" class="cat-photo" loading="lazy"><?php else: ?><span class="cat-icon"><?= category_icon($cat['slug']) ?></span><?php endif; ?>
             </div>
             <div class="cat-info">
                 <span class="cat-label"><?= e($cat['name']) ?></span>

@@ -31,9 +31,14 @@ $max_qty = min(10, $stock);
 
 // Spec row wins; otherwise fall back to the category's default type (accessories have none)
 $pc_type = $product['pc_type'] ?: ($tiers[$product['category_slug']]['pc_type'] ?? null);
+// Laptops: gaming laptops (with FPS figures in includes/fps_data.php) show the games they can play; the others show
+// what they're good for (office work, classes, streaming), with no game performance
+if (product_group($product['category_slug']) === 'laptop' && !$product['pc_type']) {
+    $pc_type = isset(fps_data()[pc_key($product['name'])]) ? 'gaming' : 'office';
+}
 
 // Priced configurations (RAM/SSD + set + GPU + colour), cheapest first
-$stmt = $pdo->prepare("SELECT id, ram, storage, set_type, gpu_variant, color, price, jcl_3yr, stock
+$stmt = $pdo->prepare("SELECT id, option_name, option_values, ram, storage, set_type, gpu_variant, color, price, jcl_3yr, stock
     FROM product_variants WHERE product_id = ? ORDER BY price, id");
 $stmt->execute([$id]);
 $variants = $stmt->fetchAll();
@@ -43,9 +48,21 @@ $configs = $variants ? [] : array_values(array_filter(array_map('trim', explode(
 
 $set_labels = ['cpu_only' => 'CPU Only', 'full_set' => 'Full Set'];
 
-// The value each chip group takes for a variant
+// The value each chip group takes for a variant. An accessory's variant has one option per variation type
+// (opt0 = Colour "Red", opt1 = Fabric "PU Leather"); one from before variation types has just its name
 function variant_keys(array $v): array
 {
+    $values = json_decode((string)$v['option_values'], true);
+    if (is_array($values) && $values) {
+        $keys = [];
+        foreach (array_values($values) as $i => $value) {
+            $keys["opt$i"] = (string)$value;
+        }
+        return $keys;
+    }
+    if (trim((string)$v['option_name']) !== '') {
+        return ['option' => $v['option_name']];
+    }
     return [
         'ramssd' => $v['ram'] . ' + ' . str_replace(' NVMe', '', $v['storage']),
         'set'    => $v['set_type'],
@@ -56,7 +73,7 @@ function variant_keys(array $v): array
 
 
 // Chip groups: value => label, in order of first appearance (so the first chip of each is the cheapest variant)
-$options      = ['ramssd' => [], 'set' => [], 'gpu' => [], 'color' => []];
+$options      = ['option' => [], 'ramssd' => [], 'set' => [], 'gpu' => [], 'color' => []];
 $variant_json = [];
 foreach ($variants as $v) {
     $keys = variant_keys($v);
@@ -72,7 +89,17 @@ foreach ($variants as $v) {
 }
 
 $chip_groups = [];
-if ($variants) {
+if (isset($options['opt0'])) {
+    // One row of chips per variation type, named and ordered the way the admin set them up
+    $opt_types = json_decode((string)$product['option_groups'], true) ?: [];
+    for ($i = 0; isset($options["opt$i"]); $i++) {
+        $order = array_flip(array_map('strval', $opt_types[$i]['values'] ?? []));
+        uksort($options["opt$i"], fn($a, $b) => ($order[(string)$a] ?? PHP_INT_MAX) <=> ($order[(string)$b] ?? PHP_INT_MAX));
+        $chip_groups["opt$i"] = [$opt_types[$i]['name'] ?? 'Pilihan', $options["opt$i"]];
+    }
+} elseif ($options['option']) {
+    $chip_groups['option'] = ['Pilihan', $options['option']];
+} elseif ($variants) {
     $chip_groups['ramssd'] = ['RAM dan SSD', $options['ramssd']];
     $chip_groups['set']    = ['Set', $options['set']];
     if (count($options['gpu']) > 1)   $chip_groups['gpu']   = ['Graphics Card', $options['gpu']];
@@ -81,7 +108,9 @@ if ($variants) {
     $chip_groups['config'] = ['RAM dan SSD', array_combine($configs, $configs)];
 }
 
-$default   = $variants[0] ?? null;
+// Pre-selected: the cheapest variant that can be bought (the cheapest overall if every one is sold out)
+$default   = current(array_filter($variants, fn($v) => (int)$v['stock'] > 0)) ?: ($variants[0] ?? null);
+$picked    = $default ? variant_keys($default) : [];
 $has_jcl   = $variants && array_filter(array_column($variants, 'jcl_3yr'), fn($j) => $j !== null);
 $show_from = $variants ? count($variants) > 1 : count($configs) > 1;
 
@@ -141,6 +170,39 @@ function youtube_embed(?string $url): ?string
     return null;
 }
 $video = youtube_embed($product['video_url']);
+
+// A laptop's description: an intro sentence, then one "•" line per detail. The main parts become rows of a spec
+// table like the PCs' ("Intel N150 Processor" → Processor: Intel N150); everything else is listed as a feature
+function laptop_details(string $text): array
+{
+    $rows = ['Processor' => null, 'Graphics Card' => null, 'Display' => null, 'RAM' => null, 'Storage' => null];
+    $intro = [];
+    $features = [];
+    foreach (preg_split('/\R/u', trim($text)) as $line) {
+        $line = trim($line);
+        if ($line === '') continue;
+        if (!preg_match('/^[•\-*]\s*(.+)$/u', $line, $m)) {
+            $intro[] = $line;
+            continue;
+        }
+        $item = trim($m[1]);
+        $label = match (true) {
+            (bool)preg_match('/\bdisplay\b|\d+(\.\d+)?\s*("|”|-?inch)/iu', $item)           => 'Display',
+            (bool)preg_match('/\bgpu\b|graphics|geforce|\brtx\b|radeon/iu', $item)         => 'Graphics Card',
+            (bool)preg_match('/processor|\bcore\s+(i\d|ultra)|ryzen|\bintel\s+n\d+/iu', $item) => 'Processor',
+            (bool)preg_match('/\bram\b/iu', $item)                                         => 'RAM',
+            (bool)preg_match('/\bssd\b|storage|\bnvme\b|\bhdd\b/iu', $item)                => 'Storage',
+            default                                                                        => null,
+        };
+        if ($label && $rows[$label] === null) {
+            // The row's label already says it: "16GB DDR5 RAM" → "16GB DDR5"
+            $rows[$label] = preg_replace('/\s+(processor|display|ram|storage)(?=\s*(\(|$))/iu', '', $item);
+        } else {
+            $features[] = $item;
+        }
+    }
+    return [implode(' ', $intro), array_filter($rows), $features];
+}
 
 // Prices are whole ringgit for PCs; show cents only when there are any
 function rm(float $amount): string
@@ -203,12 +265,12 @@ $services = [
     ['Installment Plan Available',    'no need to wait for payday to build your dream PC'],
 ];
 
-// "Apa Yang Boleh PC Ini Lakukan?" — estimates until real benchmarks are published.
+// "What Can This PC Do?" — estimates until real benchmarks are published.
 // Each item: [logo, name, detail, status (ok / mid / no), badge]
 // logo: an image in assets/images/apps/, an emoji, or [short text, tile colour, text colour] for a drawn tile
 $capabilities = [
     'gaming' => [
-        'title' => '🎮 Boleh Main Apa?',
+        'title' => '🎮 What Can It Play?',
         'note'  => '* Anggaran FPS pada 1080p berdasarkan ujian penanda aras awam (Tom\'s Hardware, TechSpot, Notebookcheck). Prestasi sebenar bergantung kepada tetapan, versi permainan dan pemacu.',
         // Details are filled per PC from includes/fps_data.php (see below); these are the fallbacks
         'items' => [
@@ -220,7 +282,7 @@ $capabilities = [
         ],
     ],
     'office' => [
-        'title' => '💼 Sesuai Untuk Apa?',
+        'title' => '💼 What Is It Good For?',
         'note'  => null,
         'items' => [
             ['word.png',              'Microsoft Word / Excel / PowerPoint', 'Dokumen pejabat harian tanpa lag',             'ok', '✓ Sesuai'],
@@ -233,7 +295,7 @@ $capabilities = [
         ],
     ],
     'editing' => [
-        'title' => '🎬 Perisian Yang Disokong',
+        'title' => '🎬 Supported Software',
         'note'  => null,
         'items' => [
             [['Prem',  '#00005B', '#9999FF'], 'Adobe Premiere Pro', 'Edit video 1080p smooth / 4K basic', 'ok',  '✓ Disokong'],
@@ -245,7 +307,7 @@ $capabilities = [
         ],
     ],
     'student' => [
-        'title' => '📚 Sesuai Untuk Pelajar',
+        'title' => '📚 Great for Students',
         'note'  => '* FPS adalah anggaran sahaja. Untuk kerja berat seperti video editing, pertimbangkan PC Editing.',
         'items' => [
             ['word.png',                  'Microsoft Office',       'Siapkan assignment Word, Excel, PPT tanpa masalah', 'ok', '✓ Sesuai'],
@@ -260,6 +322,11 @@ $capabilities = [
 // Office PCs whose integrated graphics handle light games: swap "Gaming Berat ✗" for "Light Gaming ✓"
 if (in_array(pc_key($product['name']), ['pixel lite', 'pixel azure'], true)) {
     $capabilities['office']['items'][6] = ['🎮', 'Light Gaming', 'Game ringan pada tetapan rendah–sederhana', 'ok', '✓ Sesuai'];
+}
+
+// Office laptops list only what they're good for: no "Heavy Video Editing ✗" / "Gaming Berat ✗" rows
+if (product_group($product['category_slug']) === 'laptop' && $pc_type === 'office') {
+    $capabilities['office']['items'] = array_values(array_filter($capabilities['office']['items'], fn($item) => $item[3] !== 'no'));
 }
 
 // Gaming PCs: per-PC FPS estimates (includes/fps_data.php). Under 60 FPS shows as ~ (playable) rather than ✓
@@ -343,7 +410,7 @@ require '../includes/header.php';
         <span class="current"><?= e($product['name']) ?></span>
     </nav>
 
-    <a href="<?= e($list_link) ?>" class="back-link">← Kembali ke <?= e($product['category_name']) ?></a>
+    <a href="<?= e($list_link) ?>" class="back-link">← Back to <?= e($product['category_name']) ?></a>
 
     <div class="pd-layout">
         <!-- LEFT: image + video -->
@@ -395,7 +462,7 @@ require '../includes/header.php';
             </h1>
 
             <p class="pd-price">
-                <?php if ($show_from): ?><span class="pd-price-from" id="priceFrom">From</span><?php endif; ?>
+                <?php if ($show_from && (!$default || $default === $variants[0])): ?><span class="pd-price-from" id="priceFrom">From</span><?php endif; ?>
                 <span id="displayPrice"><?= rm($default ? (float)$default['price'] : (float)$product['price']) ?></span>
             </p>
             <?php if ($variants && $show_from): ?>
@@ -419,7 +486,44 @@ require '../includes/header.php';
             </div>
             <?php endif; ?>
 
-            <?php if ($is_pc): ?>
+            <?php
+            // Laptops: specs in a table like the PCs', features as a list, both from the description (laptop_details())
+            $laptop_desc = product_group($product['category_slug']) === 'laptop' && trim((string)$product['description']) !== '';
+            if ($laptop_desc) {
+                [$lap_intro, $lap_rows, $lap_features] = laptop_details($product['description']);
+                // Specs filled in on the admin form fill any row the description doesn't cover
+                foreach (array_filter($specs) as $label => $value) {
+                    $lap_rows[$label] ??= $value;
+                }
+            }
+            ?>
+            <?php if ($laptop_desc): ?>
+            <hr class="pd-divider">
+            <?php if ($lap_intro): ?><p class="pd-desc pd-lap-intro"><?= e($lap_intro) ?></p><?php endif; ?>
+            <?php if ($lap_rows): ?>
+            <div class="table-wrap">
+                <table class="spec-table">
+                    <tbody>
+                        <?php foreach ($lap_rows as $label => $value): ?>
+                        <tr>
+                            <th scope="row"><?= e($label) ?></th>
+                            <td><?= e($value) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+            <?php if ($lap_features): ?>
+            <div class="pd-features">
+                <h3>Features</h3>
+                <ul>
+                    <?php foreach ($lap_features as $feature): ?><li><?= e($feature) ?></li><?php endforeach; ?>
+                </ul>
+            </div>
+            <?php endif; ?>
+            <hr class="pd-divider">
+            <?php elseif ($is_pc): ?>
             <hr class="pd-divider">
             <div class="table-wrap">
                 <table class="spec-table">
@@ -446,8 +550,9 @@ require '../includes/header.php';
                     <div class="chip-row" role="group" aria-labelledby="lbl-<?= $group ?>" data-group="<?= $group ?>"
                         <?= $group === 'config' ? 'data-input="config"' : '' ?>>
                         <?php $i = 0; foreach ($values as $value => $text): ?>
-                        <button type="button" class="chip<?= $i === 0 ? ' chip-active' : '' ?>" data-value="<?= e($value) ?>"
-                            aria-pressed="<?= $i++ === 0 ? 'true' : 'false' ?>">
+                        <?php $on = isset($picked[$group]) ? (string)$value === $picked[$group] : $i === 0; $i++; ?>
+                        <button type="button" class="chip<?= $on ? ' chip-active' : '' ?>" data-value="<?= e($value) ?>"
+                            aria-pressed="<?= $on ? 'true' : 'false' ?>">
                             <?php if ($group === 'color'): ?><span class="chip-swatch" style="background: <?= e(strtolower($value)) ?>"></span><?php endif; ?>
                             <?= e($text) ?>
                         </button>
@@ -506,7 +611,7 @@ require '../includes/header.php';
     <div class="section">
         <div class="cap-wrap">
             <div class="section-head">
-                <h2 class="section-title">Apa Yang Boleh PC Ini Lakukan?</h2>
+                <h2 class="section-title">What Can This PC Do?</h2>
             </div>
             <h3 class="cap-title"><?= $cap['title'] ?></h3>
 

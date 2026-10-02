@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
 $username = $_SESSION['admin_username'] ?? 'admin';
 
 require_once '../includes/db.php';
+require_once '../includes/cart.php'; // order statuses, rm_price(), order_number()
 
 // ── Catalogue check: every product, with what the store would show for it ──
 $rows = $pdo->query('SELECT p.id, p.name, p.price, p.stock, p.image, p.is_active,
@@ -63,11 +64,11 @@ $total = count($rows);
 
 // ── Low stock: variants, and products' own stock, under this many ──
 const LOW_STOCK = 5;
-$stmt = $pdo->prepare('SELECT p.id, p.name, p.is_active, v.ram, v.storage, v.set_type, v.gpu_variant, v.stock, 1 AS is_variant
+$stmt = $pdo->prepare('SELECT p.id, p.name, p.is_active, v.option_name, v.ram, v.storage, v.set_type, v.gpu_variant, v.stock, 1 AS is_variant
         FROM product_variants v JOIN products p ON p.id = v.product_id
         WHERE v.stock < ?
     UNION ALL
-    SELECT p.id, p.name, p.is_active, NULL, NULL, NULL, NULL, p.stock, 0
+    SELECT p.id, p.name, p.is_active, NULL, NULL, NULL, NULL, NULL, p.stock, 0
         FROM products p
         WHERE p.stock < ?
     ORDER BY stock, name');
@@ -83,6 +84,47 @@ try {
     $syncs = [];
     $sync_log_ready = false; // table not created yet
 }
+// ── Orders (database/orders.sql): this month's sales, and what's waiting to be packed or collected ──
+const OPEN_STATUSES = ['pending', 'processing', 'packed', 'ready_pickup'];
+$month_start = date('Y-m-01 00:00:00');
+$sales = ['this' => ['n' => 0, 'total' => 0], 'last' => ['n' => 0, 'total' => 0]];
+$by_status = [];
+$open_orders = [];
+try {
+    // Cancelled orders don't count as sales
+    $sum = $pdo->prepare("SELECT COUNT(*) AS n, COALESCE(SUM(total_amount), 0) AS total FROM orders
+        WHERE status <> 'cancelled' AND created_at >= ? AND created_at < ?");
+    $sum->execute([$month_start, date('Y-m-d H:i:s', strtotime('first day of next month midnight'))]);
+    $sales['this'] = $sum->fetch();
+    $sum->execute([date('Y-m-d H:i:s', strtotime('first day of last month midnight')), $month_start]);
+    $sales['last'] = $sum->fetch();
+
+    $by_status = $pdo->query('SELECT status, COUNT(*) FROM orders GROUP BY status')->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // Oldest first: the order that has waited longest is at the top
+    $open_orders = $pdo->query("SELECT o.id, o.customer_name, o.delivery_method, o.payment_method, o.total_amount, o.status, o.created_at,
+            (SELECT COALESCE(SUM(i.qty), 0) FROM order_items i WHERE i.order_id = o.id) AS items
+        FROM orders o WHERE o.status IN ('" . implode("','", OPEN_STATUSES) . "')
+        ORDER BY o.created_at, o.id LIMIT 6")->fetchAll();
+    $orders_ready = true;
+} catch (PDOException $e) {
+    $orders_ready = false; // orders table not created yet
+}
+$open_total = array_sum(array_map(fn($s) => (int)($by_status[$s] ?? 0), OPEN_STATUSES));
+$pending    = (int)($by_status['pending'] ?? 0);
+$statuses   = order_statuses();
+
+// "3 h ago", "2 days ago"
+function ago(string $ts): string
+{
+    $mins = max(0, intdiv(time() - strtotime($ts), 60));
+    if ($mins < 1) return 'just now';
+    if ($mins < 60) return $mins . ' min ago';
+    if ($mins < 1440) return intdiv($mins, 60) . ' h ago';
+    $days = intdiv($mins, 1440);
+    return $days . ' day' . ($days === 1 ? '' : 's') . ' ago';
+}
+
 $fmt_date = fn(string $ts) => date('j M Y, g:i a', strtotime($ts));
 $hour = (int)date('G');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
@@ -97,30 +139,31 @@ admin_open('Dashboard', 'dashboard');
                 <p class="admin-page-sub">Here's how the store looks right now.</p>
             </div>
             <div class="admin-page-actions">
-                <a href="products.php?add=1#add" class="btn btn-sm admin-btn-icon"><?= admin_icon('plus') ?> Add product</a>
+                <a href="order_create.php" class="btn btn-sm admin-btn-icon"><?= admin_icon('plus') ?> Create order</a>
+                <a href="products.php?add=1#add" class="btn btn-sm btn-outline admin-btn-icon"><?= admin_icon('box') ?> Add product</a>
                 <a href="sync.php" class="btn btn-sm btn-outline admin-btn-icon"><?= admin_icon('sync') ?> Run price sync</a>
             </div>
         </header>
 
         <div class="dash-stats">
-            <div class="dash-stat is-green">
+            <a href="orders.php?from=<?= date('Y-m-01') ?>" class="dash-stat is-green" title="Orders placed this month, not counting cancelled ones">
+                <span class="dash-stat-icon"><?= admin_icon('stock') ?></span>
+                <span class="dash-stat-label">Sales in <?= date('F') ?></span>
+                <strong><small>RM </small><?= number_format((float)$sales['this']['total']) ?></strong>
+                <span class="dash-stat-note"><?= (int)$sales['this']['n'] ?> order<?= (int)$sales['this']['n'] === 1 ? '' : 's' ?> · RM <?= number_format((float)$sales['last']['total']) ?> last month</span>
+            </a>
+            <a href="orders.php?status=pending" class="dash-stat is-amber">
+                <span class="dash-stat-icon"><?= admin_icon('orders') ?></span>
+                <span class="dash-stat-label">Orders to fulfil</span>
+                <strong><?= $pending ?><small> awaiting</small></strong>
+                <span class="dash-stat-note<?= $pending ? ' is-warn' : '' ?>"><?= $open_total - $pending ?> more in progress · <?= (int)($by_status['shipped'] ?? 0) ?> shipped</span>
+            </a>
+            <a href="products.php" class="dash-stat is-blue">
                 <span class="dash-stat-icon"><?= admin_icon('eye') ?></span>
-                <span class="dash-stat-label">Live on the store</span>
+                <span class="dash-stat-label">Products live</span>
                 <strong><?= $counts['live'] ?><small> / <?= $total ?></small></strong>
-                <span class="dash-stat-note"><?= $counts['hidden'] ? $counts['hidden'] . ' hidden' : 'None hidden' ?></span>
-            </div>
-            <div class="dash-stat is-blue">
-                <span class="dash-stat-icon"><?= admin_icon('box') ?></span>
-                <span class="dash-stat-label">Catalogue</span>
-                <strong><?= $counts['pc'] ?><small> PCs</small></strong>
-                <span class="dash-stat-note"><?= $counts['laptop'] ?> laptops · <?= $counts['accessory'] ?> accessories</span>
-            </div>
-            <div class="dash-stat is-purple">
-                <span class="dash-stat-icon"><?= admin_icon('layers') ?></span>
-                <span class="dash-stat-label">PC variants</span>
-                <strong><?= $counts['variants'] ?></strong>
-                <span class="dash-stat-note<?= $counts['variants_out'] ? ' is-warn' : '' ?>"><?= $counts['variants_out'] ? $counts['variants_out'] . ' out of stock' : 'All in stock' ?></span>
-            </div>
+                <span class="dash-stat-note"><?= $counts['pc'] ?> PCs · <?= $counts['laptop'] ?> laptops · <?= $counts['accessory'] ?> accessories<?= $counts['hidden'] ? ' · ' . $counts['hidden'] . ' hidden' : '' ?></span>
+            </a>
             <a href="#syncs" class="dash-stat is-cyan">
                 <span class="dash-stat-icon"><?= admin_icon('clock') ?></span>
                 <span class="dash-stat-label">Last price sync</span>
@@ -135,7 +178,41 @@ admin_open('Dashboard', 'dashboard');
         </div>
 
         <div class="dash-grid">
-            <!-- Left: what to fix -->
+            <!-- Left: orders waiting, then what to fix -->
+            <div class="dash-side">
+            <section class="dash-card is-amber" id="orders">
+                <header class="dash-card-head">
+                    <span class="dash-card-icon is-amber"><?= admin_icon('orders') ?></span>
+                    <div>
+                        <h2>Orders to fulfil <?php if ($open_total): ?><span class="dash-count is-amber"><?= $open_total ?></span><?php endif; ?></h2>
+                        <p>Awaiting processing, processing, packed or ready for pickup · longest waiting first</p>
+                    </div>
+                </header>
+                <?php if (!$orders_ready): ?>
+                <p class="dash-empty"><span>Orders aren't switched on yet: run <code>database/orders.sql</code> in phpMyAdmin.</span></p>
+                <?php elseif (!$open_orders): ?>
+                <p class="dash-empty is-good"><?= admin_icon('check') ?> <span>All caught up: no orders waiting.</span></p>
+                <?php else: ?>
+                <ul class="dash-list dash-orders">
+                    <?php foreach ($open_orders as $o): ?>
+                    <li>
+                        <a href="order_detail.php?id=<?= (int)$o['id'] ?>" class="dash-list-main">
+                            <strong><span class="order-id"><?= order_number((int)$o['id']) ?></span> <?= e($o['customer_name']) ?></strong>
+                            <small><?= (int)$o['items'] ?> item<?= (int)$o['items'] === 1 ? '' : 's' ?> · <?= e($o['delivery_method']) ?> · <?= e($o['payment_method']) ?> · <?= ago($o['created_at']) ?></small>
+                        </a>
+                        <div class="dash-order-end">
+                            <span class="order-badge is-<?= e($o['status']) ?>"><?= e($statuses[$o['status']] ?? $o['status']) ?></span>
+                            <b><?= rm_price((float)$o['total_amount']) ?></b>
+                        </div>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php endif; ?>
+                <?php if ($orders_ready): ?>
+                <a href="orders.php" class="dash-card-more">View all orders<?= $open_total > count($open_orders) ? ' (' . ($open_total - count($open_orders)) . ' more waiting)' : '' ?> →</a>
+                <?php endif; ?>
+            </section>
+
             <section class="dash-card <?= $needs ? 'is-red' : 'is-green' ?>" id="attention">
                 <header class="dash-card-head">
                     <span class="dash-card-icon is-<?= $needs ? 'red' : 'green' ?>"><?= admin_icon($needs ? 'alert' : 'check') ?></span>
@@ -170,6 +247,7 @@ admin_open('Dashboard', 'dashboard');
                 </ul>
                 <?php endforeach; ?>
             </section>
+            </div>
 
             <!-- Right: stock and sync history -->
             <div class="dash-side">
@@ -188,12 +266,12 @@ admin_open('Dashboard', 'dashboard');
                         <?php foreach ($low_stock as $row): ?>
                         <?php
                         $variant = $row['is_variant']
-                            ? implode(' · ', array_filter([$row['ram'] . ' / ' . $row['storage'], $set_labels[$row['set_type']] ?? '', $row['gpu_variant']]))
+                            ? ((string)$row['option_name'] !== '' ? $row['option_name'] : implode(' · ', array_filter([$row['ram'] . ' / ' . $row['storage'], $set_labels[$row['set_type']] ?? '', $row['gpu_variant']])))
                             : 'Whole product';
                         $out = (int)$row['stock'] <= 0;
                         ?>
                         <li>
-                            <a href="products.php?edit=<?= (int)$row['id'] ?>#<?= $row['is_variant'] ? 'variants' : 'edit' ?>" class="dash-list-main" title="Restock">
+                            <a href="products.php?edit=<?= (int)$row['id'] ?>#<?= $row['is_variant'] ? ((string)$row['option_name'] !== '' ? 'options' : 'variants') : 'edit' ?>" class="dash-list-main" title="Restock">
                                 <strong><?= e($row['name']) ?><?= $row['is_active'] ? '' : ' <em>Hidden</em>' ?></strong>
                                 <small><?= e($variant) ?></small>
                             </a>

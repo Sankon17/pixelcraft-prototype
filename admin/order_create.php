@@ -21,7 +21,7 @@ foreach ($pdo->query('SELECT p.id, p.name, p.price, p.stock, p.is_active, c.name
     LEFT JOIN categories c ON c.id = p.category_id ORDER BY c.id, p.name') as $p) {
     $catalogue[(int)$p['id']] = $p + ['variants' => []];
 }
-foreach ($pdo->query('SELECT id, product_id, ram, storage, set_type, gpu_variant, color, price, stock FROM product_variants ORDER BY product_id, price, id') as $v) {
+foreach ($pdo->query('SELECT id, product_id, option_name, ram, storage, set_type, gpu_variant, color, price, stock FROM product_variants ORDER BY product_id, price, id') as $v) {
     if (isset($catalogue[(int)$v['product_id']])) {
         $catalogue[(int)$v['product_id']]['variants'][(int)$v['id']] = $v + ['label' => variant_detail($v)];
     }

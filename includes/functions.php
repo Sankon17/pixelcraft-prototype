@@ -58,6 +58,52 @@ function category_image(string $base, string $slug): ?string
     return null;
 }
 
+// Homepage "Shop by Category" photo for each category (product photos in assets/images/products/), chosen to show
+// the category at its best. 'custom-pcs' is the Custom PCs card
+const CATEGORY_PHOTOS = [
+    'custom-pcs'    => 'pixel-radiant-2.jpg',
+    'gaming-chairs' => 'ttracing-maxx-air-threads-fabric-gaming-chair-luffy-edition-1.jpg',
+    'mouse'         => 'armaggeddon-scorpion-3-lite-1.jpg',
+    'keyboard'      => 'armaggeddon-mka-1c-nex-3.jpg',
+    'mousepad'      => 'armaggeddon-assault-as-29n-1.webp',
+    'headset'       => null, // no product photo yet: the newest live one with a photo is used once there is one
+    'speaker'       => 'armaggeddon-titan-2-1.jpg',
+    'controller'    => '8bitdo-wireless-controller-1.jpg',
+    'monitor'       => 'monitor-27-inch-1.jpg',
+    'printer'       => 'canon-printer-1.png', // the card uses assets/images/categories/printer.jpg (Canon logo) first,
+    'led-lamp'      => 'led-lamp-2.webp',
+    'pc-components' => 'colorful-igame-rtx-5080-ultra-w-oc-16gb-1.jpg',
+    'laptops'       => null,
+];
+
+// The photo for a category card, kept in step with the catalogue: a file in assets/images/categories/ wins; then the
+// chosen photo above, as long as it still belongs to a live product of that category; otherwise the cover of the
+// category's newest live product (so a new category, or one whose chosen product was removed, still gets a photo).
+// Null when nothing in the category has a photo (the card shows its icon)
+function category_photo(PDO $pdo, string $base, string $slug): ?string
+{
+    if ($src = category_image($base, $slug)) return $src;
+    $slugs = $slug === 'custom-pcs' ? array_keys(pc_tiers()) : [$slug];
+    $in = implode(',', array_fill(0, count($slugs), '?'));
+
+    if ($chosen = CATEGORY_PHOTOS[$slug] ?? null) {
+        $stmt = $pdo->prepare("SELECT 1 FROM products p JOIN categories c ON c.id = p.category_id
+            LEFT JOIN product_images i ON i.product_id = p.id AND i.filename = ?
+            WHERE c.slug IN ($in) AND p.is_active = 1 AND (p.image = ? OR i.id IS NOT NULL) LIMIT 1");
+        $stmt->execute([$chosen, ...$slugs, $chosen]);
+        if ($stmt->fetchColumn() && ($src = asset_image($base, 'products', $chosen))) return $src;
+    }
+
+    $stmt = $pdo->prepare("SELECT p.image FROM products p JOIN categories c ON c.id = p.category_id
+        WHERE c.slug IN ($in) AND p.is_active = 1 AND p.image IS NOT NULL AND p.image <> ''
+        ORDER BY p.created_at DESC, p.id DESC");
+    $stmt->execute($slugs);
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $file) {
+        if ($src = asset_image($base, 'products', $file)) return $src;
+    }
+    return null;
+}
+
 function product_image(array $product, string $base, string $class = 'product-img'): string
 {
     $src = asset_image($base, 'products', $product['image'] ?? null);
@@ -103,6 +149,8 @@ function product_issues(array $p): array
     $variants = (int)$p['variant_count'];
     $out      = (int)$p['variants_out'];
     $issues   = [];
+    // Accessories edit their variants in the #options section of the edit form, PCs and laptops in #variants
+    $v_anchor = $group === 'accessory' ? 'options' : 'variants';
 
     if (!$variants && (float)$p['price'] <= 0) {
         $issues['price'] = [2, 'No price — shows RM 0.00', 'edit'];
@@ -111,9 +159,9 @@ function product_issues(array $p): array
         $issues['stock'] = [2, 'Out of stock — can’t be bought', 'edit'];
     }
     if ($variants && $out === $variants) {
-        $issues['variants'] = [2, 'All variants out of stock', 'variants'];
+        $issues['variants'] = [2, 'All variants out of stock', $v_anchor];
     } elseif ($out) {
-        $issues['variants'] = [1, "$out of $variants variants out of stock", 'variants'];
+        $issues['variants'] = [1, "$out of $variants variants out of stock", $v_anchor];
     } elseif ($group === 'pc' && !$variants) {
         $issues['variants'] = [1, 'No variants to choose from', 'variants'];
     }

@@ -284,6 +284,10 @@ img { max-width: 100%; display: block; }
     overflow: hidden;
 }
 
+/* A product photo filling the card (category_photo() in includes/functions.php) */
+.cat-photo { width: 100%; height: 100%; object-fit: cover; transition: transform 0.35s; }
+.cat-tile:hover .cat-photo { transform: scale(1.06); }
+
 .cat-icon { font-size: 80px; filter: drop-shadow(0 6px 14px rgba(209, 0, 0, 0.45)); transition: transform 0.35s; }
 .cat-tile:hover .cat-icon { transform: scale(1.1); }
 
@@ -1868,6 +1872,15 @@ a.dash-stat:hover { border-color: color-mix(in srgb, var(--c) 55%, #222); transf
 .dash-list-main strong em { margin-left: 6px; color: #777; font-size: 11px; font-style: normal; font-weight: 600; text-transform: uppercase; }
 .dash-list-main small { overflow: hidden; color: #7c7c7c; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 a.dash-list-main:hover strong { color: var(--red-text); }
+/* Orders to fulfil */
+.dash-grid > * { min-width: 0; } /* long one-line notes shorten with "…" instead of widening the column */
+.dash-orders .dash-list-main strong { display: flex; align-items: baseline; gap: 8px; font-size: 15px; }
+.dash-orders .order-id { font-size: 14px; }
+.dash-orders .dash-list-main small { margin-top: 2px; font-size: 13px; }
+.dash-order-end { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 5px; }
+.dash-order-end b { color: #fff; font-size: 14px; white-space: nowrap; }
+.dash-card-more { display: inline-block; margin-top: 16px; color: var(--red-text); font-size: 14px; font-weight: 600; }
+.dash-card-more:hover { text-decoration: underline; }
 .dash-pill { flex-shrink: 0; padding: 3px 10px; background: color-mix(in srgb, var(--c) 15%, transparent); border-radius: 999px; color: var(--c); font-size: 12px; font-weight: 700; white-space: nowrap; }
 
 /* ── Orders (admin/orders.php, order_detail.php) ───────────────────── */
@@ -2194,6 +2207,34 @@ a.dash-list-main:hover strong { color: var(--red-text); }
 /* Specs and Variants sections inside the edit form (one Save for everything) */
 .ap-section { min-width: 0; margin: 8px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid var(--border); scroll-margin-top: 110px; }
 .ap-section[hidden] { display: none; }
+/* A fieldset only there to switch a field off (YouTube link: PCs and laptops only) */
+.ap-plain { min-width: 0; margin: 0; padding: 0; border: 0; }
+.ap-plain[hidden] { display: none; }
+/* Accessory variants: variation types (Colour, Fabric …), then a price / stock row per combination */
+.ov-types { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.ov-type { padding: 14px; background: #0e0e0e; border: 1px solid #262626; border-radius: 10px; }
+.ov-type-head { display: grid; grid-template-columns: auto minmax(0, 260px) 1fr; align-items: center; gap: 12px; margin-bottom: 12px; }
+.ov-type-label { color: #8a8a8a; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.ov-remove-type { justify-self: end; padding: 6px 10px; background: none; border: 1px solid #333; border-radius: 6px; color: #aaa; font: inherit; font-size: 13px; cursor: pointer; }
+.ov-remove-type:hover { border-color: var(--red); color: var(--red-text); }
+.ov-values { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ov-value { display: inline-flex; align-items: center; gap: 4px; }
+.ap-form .ov-value input { width: 160px; padding: 8px 10px; font-size: 14px; }
+.ov-add-value { padding: 8px 12px; background: none; border: 1px dashed #444; border-radius: 6px; color: #ccc; font: inherit; font-size: 13px; cursor: pointer; }
+.ov-add-value:hover { border-color: var(--red); color: #fff; }
+.ov-table { margin-top: 18px; }
+.ov-table[hidden] { display: none; }
+.ov-apply { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ov-apply > span { color: #bbb; font-size: 13px; font-weight: 600; }
+.ap-form .ov-apply input { width: 140px; padding: 8px 10px; font-size: 14px; }
+.ov-apply .btn { font-family: inherit; }
+.ap-variants.ap-options { min-width: 480px; }
+.ap-options td.ov-cell { color: #ddd; font-weight: 600; white-space: nowrap; }
+.ap-options td.ov-first { border-right: 1px solid #1c1c1c; vertical-align: middle; }
+@media (max-width: 600px) {
+    .ov-type-head { grid-template-columns: 1fr auto; }
+    .ov-type-label { grid-column: 1 / -1; }
+}
 .ap-section legend { padding-right: 12px; color: #fff; font-size: 17px; font-weight: 700; }
 .ap-section-note { margin-bottom: 14px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .ap-spec-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 18px; }
@@ -2227,9 +2268,10 @@ a.dash-list-main:hover strong { color: var(--red-text); }
 .ap-add-variant { font-family: inherit; }
 
 
-/* Products admin page: everything 15% bigger on laptop/desktop screens (phones have no room to spare) */
+/* Products admin page: the Edit product and Photos panels 15% bigger on laptop/desktop screens; the list stays at 100%
+   so it fits beside the filter boxes (phones have no room to spare) */
 @media (min-width: 1000px) {
-    .ap-page { zoom: 1.15; }
+    .ap-page .ap-edit { zoom: 1.15; }
     /* A little tighter so the whole table (Edit/Delete included) still fits a laptop screen */
     .ap-page .ap-table th,
     .ap-page .ap-table td { padding-left: 6px; padding-right: 6px; }
@@ -2279,7 +2321,69 @@ a.dash-list-main:hover strong { color: var(--red-text); }
     text-transform: uppercase;
 }
 .ap-table tr.ap-section th span { margin-left: 6px; color: var(--muted); font-weight: 600; letter-spacing: 0; }
+/* All tab: the section header opens and closes its list (arrow on the right) */
+.ap-table tr.ap-section th:has(.ap-section-toggle) { padding: 0; }
+.ap-section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 16px 12px 12px;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: left;
+    text-transform: inherit;
+    cursor: pointer;
+}
+.ap-section-toggle:hover { background: #240909; }
+.ap-section-toggle:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
+.ap-table tr.ap-section th .ap-section-label { margin-left: 0; color: #fff; font-weight: 700; letter-spacing: 1px; }
+.ap-section-arrow { width: 20px; height: 20px; flex-shrink: 0; color: #bbb; transition: transform 0.2s; }
+.ap-section-toggle[aria-expanded="true"] .ap-section-arrow { transform: rotate(180deg); }
+.ap-section-toggle:hover .ap-section-arrow { color: #fff; }
+.ap-table:not(.is-searching) tbody.is-collapsed tr[data-search] { display: none; }
+/* While searching every section with a match is open, so the arrows have nothing to do */
+.ap-table.is-searching .ap-section-toggle { pointer-events: none; }
+.ap-table.is-searching .ap-section-arrow { visibility: hidden; }
+/* The table scrolls sideways on small screens, so keep the arrow next to the label where it can be seen */
+@media (max-width: 900px) {
+    .ap-section-toggle { justify-content: flex-start; }
+}
 .ap-empty { padding: 32px 12px; color: var(--muted); text-align: center; }
+/* Category filter beside the product list (Steam-style "Narrow by" boxes) */
+.ap-list { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: start; gap: 16px; }
+.ap-list > .ap-table-wrap:only-child { grid-column: 1 / -1; }
+.ap-filters { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.ap-filters-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
+.ap-filters-head strong { font-size: 15px; }
+.ap-filters-clear { padding: 0; background: none; border: 0; color: var(--red-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.ap-filters-clear:hover { text-decoration: underline; }
+.ap-filters-clear[hidden] { display: none; }
+.ap-filter-group { min-width: 0; margin: 0; padding: 0 0 6px; background: #121212; border: 1px solid #222; border-radius: 10px; overflow: hidden; }
+.ap-filter-group legend { float: left; width: 100%; margin-bottom: 4px; padding: 7px 10px; background: #1b1b1b; border-bottom: 1px solid #262626; color: #ddd; font-size: 12px; font-weight: 700; }
+.ap-filter-item { clear: both; display: flex; align-items: center; gap: 8px; margin: 0 4px; padding: 4px 6px; border-radius: 6px; color: #ccc; font-size: 13px; cursor: pointer; }
+.ap-filter-item:hover { background: #1c1c1c; color: #fff; }
+.ap-filter-item input { width: 14px; height: 14px; flex-shrink: 0; margin: 0; accent-color: var(--red); cursor: pointer; }
+.ap-filter-item span { flex: 1; min-width: 0; }
+.ap-filter-item em { color: #777; font-size: 12px; font-style: italic; }
+.ap-filter-item:has(input:checked) { background: rgba(209, 0, 0, 0.14); color: #fff; }
+.ap-filter-item:has(input:checked) em { color: #f2a0a0; }
+/* Narrower screens: one compact row per group above the list, so the table keeps its full width */
+@media (max-width: 1519px) {
+    .ap-list { grid-template-columns: 1fr; gap: 14px; }
+    .ap-filters { position: static; gap: 0; padding: 10px 12px; background: #121212; border: 1px solid #222; border-radius: 10px; }
+    .ap-filters-head { margin-bottom: 4px; }
+    .ap-filter-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 0; background: none; border: 0; border-top: 1px solid #1f1f1f; border-radius: 0; }
+    .ap-filter-group legend { float: left; width: 190px; margin: 0; padding: 0 8px 0 0; background: none; border: 0; color: #9a9a9a; font-size: 13px; }
+    .ap-filter-item { clear: none; display: inline-flex; margin: 0; padding: 5px 10px; background: #181818; font-size: 13px; }
+}
+@media (max-width: 700px) {
+    .ap-filter-group legend { width: 100%; padding-bottom: 4px; }
+}
 .ap-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .ap-table thead th {
     padding: 12px;
@@ -2297,8 +2401,10 @@ a.dash-list-main:hover strong { color: var(--red-text); }
 .ap-table tbody tr:hover td { background: #141414; }
 .ap-table tr.is-editing td { background: rgba(209, 0, 0, 0.08); }
 .ap-table tr.is-hidden td:not(:first-child):not(:last-child) { opacity: 0.45; }
-.ap-name { min-width: 180px; }
+.ap-name { min-width: 180px; max-width: 280px; }
 .ap-name strong { display: block; }
+/* The photo filename on one line (the full name shows on hover) */
+.ap-table td.ap-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ap-table small { display: block; color: #777; font-size: 12px; }
 .ap-table td.ap-spec { min-width: 150px; color: #8f8f8f; font-size: 13px; line-height: 1.45; }
 .ap-cat {
@@ -2639,3 +2745,15 @@ a.dash-list-main:hover strong { color: var(--red-text); }
     .footer-inner { padding: 32px 16px; }
     .auth-card { padding: 28px 20px; }
 }
+
+/* A button with an SVG icon before its label (Download Receipt on pages/order_success.php) */
+.btn-with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.btn-icon { width: 22px; height: 22px; flex-shrink: 0; }
+
+/* Laptop page (pages/product.php): intro, spec table like the PCs', then the features as a list */
+.pd-lap-intro { margin: 4px 0 16px; color: #cfcfcf; font-size: 15px; line-height: 1.7; }
+.pd-features { margin-top: 22px; }
+.pd-features h3 { margin-bottom: 10px; color: var(--red-text); font-size: 15px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
+.pd-features ul { display: grid; gap: 8px; list-style: none; }
+.pd-features li { position: relative; padding-left: 26px; color: #e6e6e6; font-size: 14px; line-height: 1.5; }
+.pd-features li::before { content: "✓"; position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 18px; height: 18px; background: rgba(209, 0, 0, 0.18); border-radius: 50%; color: var(--red-text); font-size: 11px; font-weight: 800; }

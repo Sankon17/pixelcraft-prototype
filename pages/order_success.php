@@ -84,7 +84,10 @@ require '../includes/header.php';
     </article>
 
     <div class="success-actions no-print">
-        <button type="button" class="btn" onclick="window.print()">⬇ Download Receipt</button>
+        <button type="button" class="btn btn-with-icon" onclick="window.print()">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m6.5 10 5.5 5.5 5.5-5.5"/><path d="M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17"/></svg>
+            Download Receipt
+        </button>
         <a href="../index.php" class="btn btn-outline">Back to Home</a>
     </div>
     <p class="success-tip no-print">Tip: in the print window, choose “Save as PDF” to keep a copy.</p>

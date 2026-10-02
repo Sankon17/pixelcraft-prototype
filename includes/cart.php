@@ -169,6 +169,10 @@ function cart_count(): int
 // "16GB / 512GB · Full Set · RTX3060" (colour only when it isn't the usual black)
 function variant_detail(array $v): string
 {
+    // An accessory's variant is just its option ("White", "Luffy Edition")
+    if (trim((string)($v['option_name'] ?? '')) !== '') {
+        return $v['option_name'];
+    }
     return implode(' · ', array_filter([
         $v['ram'] . ' / ' . $v['storage'],
         ['cpu_only' => 'CPU Only', 'full_set' => 'Full Set'][$v['set_type']] ?? '',
@@ -192,7 +196,7 @@ function cart_lines(PDO $pdo, array &$notes = []): array
         $products[(int)$p['id']] = $p;
     }
     $variants = [];
-    foreach ($pdo->query('SELECT id, product_id, ram, storage, set_type, gpu_variant, color, price, stock FROM product_variants
+    foreach ($pdo->query('SELECT id, product_id, option_name, ram, storage, set_type, gpu_variant, color, price, stock FROM product_variants
         WHERE id IN (' . $ids(array_filter(array_column($cart, 'variant_id'))) . ')') as $v) {
         $variants[(int)$v['id']] = $v;
     }
