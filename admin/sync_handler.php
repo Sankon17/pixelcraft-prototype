@@ -1,16 +1,10 @@
 <?php
-// Price Sync: reads the SUMMARY (DB Import) sheet of PixelCraft_PriceSync_Reference.xlsx and updates
-// product_variants (price + JCL 1/2/3 yr), then sets products.price to each PC's cheapest variant.
+// Price Sync: reads variant names and prices from the Google Sheet in includes/google_config.php and updates
+// product_variants (price, plus JCL 1/2/3 yr worked out from it), then sets products.price to each PC's cheapest variant.
 // Called by sync.php with fetch(); always answers with JSON.
 session_start();
 require_once '../includes/db.php';
 require_once '../includes/fps_data.php'; // pc_key()
-require_once '../vendor/autoload.php';
-
-use PhpOffice\PhpSpreadsheet\IOFactory;
-
-const SYNC_SHEET    = 'SUMMARY (DB Import)';
-const SYNC_MAX_SIZE = 5 * 1024 * 1024;
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -24,47 +18,17 @@ function sync_fail(string $message, int $status = 400): never
 if (($_SESSION['admin_logged_in'] ?? false) !== true) {
     sync_fail('Your session has expired. Please log in again.', 401);
 }
-// PhpSpreadsheet needs PHP's zip extension to open .xlsx files
-if (!class_exists('ZipArchive')) {
-    sync_fail('The server cannot open .xlsx files yet: PHP\'s zip extension is off. Turn on extension=zip in C:\xampp\php\php.ini, then Stop and Start Apache in the XAMPP Control Panel.', 500);
-}
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    sync_fail('Use the upload form on the Price Sync page.', 405);
-}
-// A request bigger than post_max_size arrives with no fields at all (not even the token)
-if (empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
-    sync_fail('The file is too large. Maximum size is 5 MB.');
+    sync_fail('Use the Sync button on the Price Sync page.', 405);
 }
 if (!hash_equals($_SESSION['csrf'] ?? '', $_POST['csrf'] ?? '')) {
     sync_fail('Session expired. Refresh the page and try again.', 403);
 }
-
-// ── Validate the upload ─────────────────────────────────────────────
-$file = $_FILES['file'] ?? null;
-if (!$file || $file['error'] === UPLOAD_ERR_NO_FILE) {
-    sync_fail('Please choose an .xlsx file to upload.');
+// Not in git (it holds the API key), so a fresh copy of the site won't have it
+if (!is_file('../includes/google_config.php')) {
+    sync_fail('Google Sheets is not set up: includes/google_config.php is missing.', 500);
 }
-if (in_array($file['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) || $file['size'] > SYNC_MAX_SIZE) {
-    sync_fail('The file is too large. Maximum size is 5 MB.');
-}
-if ($file['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
-    sync_fail('The upload failed. Please try again.');
-}
-if (strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) !== 'xlsx') {
-    sync_fail('Only .xlsx files are accepted.');
-}
-// .xlsx is a zip archive, so some systems report it as application/zip
-$mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
-if (!in_array($mime, ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip', 'application/octet-stream'], true)) {
-    sync_fail('That file is not an Excel .xlsx workbook.');
-}
-
-$tmp = tempnam(sys_get_temp_dir(), 'pcsync');
-// Runs on every exit path (sync_fail() exits, which skips finally blocks)
-register_shutdown_function(fn() => @unlink($tmp));
-if (!move_uploaded_file($file['tmp_name'], $tmp)) {
-    sync_fail('Could not save the uploaded file.', 500);
-}
+require_once '../includes/google_config.php';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 // "PC PIXEL BLAZE (16GB/512GB) FULL SET RTX3060" → name, ram, storage, set_type, gpu_variant
@@ -91,25 +55,62 @@ function variant_key(int $product_id, string $ram, string $storage, string $set_
     return implode('|', [$product_id, $norm($ram), $norm($storage), $set_type, $norm($gpu)]);
 }
 
-function cell_number($sheet, string $cell): ?float
+// 1759, "1759", "RM 1,759.00" → 1759.0; anything else → null
+function sheet_number($v): ?float
 {
-    $v = $sheet->getCell($cell)->getCalculatedValue();
+    if (is_string($v)) {
+        $v = str_replace([',', ' '], '', preg_replace('/^RM/i', '', trim($v)));
+    }
     return is_numeric($v) ? (float)$v : null;
 }
 
-// ── Read and sync ───────────────────────────────────────────────────
-try {
-    $reader = IOFactory::createReader('Xlsx');
-    $reader->setReadDataOnly(true);
-    try {
-        $sheet = $reader->load($tmp)->getSheetByName(SYNC_SHEET);
-    } catch (Throwable $e) {
-        sync_fail('Could not read the file. Is it a valid .xlsx workbook?');
-    }
-    if (!$sheet) {
-        sync_fail('Sheet "' . SYNC_SHEET . '" was not found in this workbook.');
-    }
+// JCL instalment: flat 1.25% a month on the full price, split over the months (RM1,759 → RM70.85 × 36).
+// Same formula as jcl_monthly() in admin/products.php
+function jcl_monthly(float $price, int $months): float
+{
+    return round($price * (1 + 0.0125 * $months) / $months, 2);
+}
 
+// Every row of the sheet range, header included; fails with a readable message
+function fetch_sheet_rows(): array
+{
+    // UNFORMATTED_VALUE: prices come back as numbers, not "RM 1,759.00"
+    $url = 'https://sheets.googleapis.com/v4/spreadsheets/' . rawurlencode(GSHEET_ID) . '/values/' . rawurlencode(GSHEET_RANGE)
+         . '?valueRenderOption=UNFORMATTED_VALUE&key=' . rawurlencode(GSHEET_API_KEY);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 20]);
+    $body = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false) {
+        sync_fail('Could not reach Google Sheets, nothing was changed. (' . $curl_error . ')', 502);
+    }
+    $data = json_decode($body, true);
+    if ($status !== 200) {
+        $why = $data['error']['message'] ?? 'HTTP ' . $status;
+        $hint = match ($status) {
+            403 => ' Check the sheet is shared as "Anyone with the link can view" and the API key is allowed to use the Sheets API.',
+            404 => ' Check the sheet ID in includes/google_config.php.',
+            400 => ' Check the sheet ID and range in includes/google_config.php.',
+            default => '',
+        };
+        sync_fail('Google Sheets refused the request, nothing was changed. (' . $why . ')' . $hint, 502);
+    }
+    if (!is_array($data)) {
+        sync_fail('Unexpected reply from Google Sheets, nothing was changed.', 502);
+    }
+    return $data['values'] ?? []; // no "values" at all when the range is empty
+}
+
+// ── Read and sync ───────────────────────────────────────────────────
+$rows = fetch_sheet_rows();
+if (count($rows) < 2) {
+    sync_fail('The sheet has no price rows under the header (' . GSHEET_RANGE . ').');
+}
+
+try {
     // PCs that have variants, by short name ("pixel blaze plus" → 33)
     $products = [];
     foreach ($pdo->query('SELECT DISTINCT p.id, p.name FROM products p JOIN product_variants v ON v.product_id = p.id') as $p) {
@@ -129,21 +130,18 @@ try {
 
     $pdo->beginTransaction();
 
-    $last = $sheet->getHighestRow();
-    for ($row = 3; $row <= $last; $row++) {
-        $name  = trim((string)$sheet->getCell("B$row")->getValue());
-        $price = cell_number($sheet, "C$row");
+    // rows[0] is the header; sheet row number = index + 1
+    foreach (array_slice($rows, 1, null, true) as $i => $cells) {
+        $name  = trim((string)($cells[0] ?? ''));
+        $price = sheet_number($cells[1] ?? null);
         if ($name === '' && $price === null) {
             continue; // blank row
         }
 
-        $entry = ['row' => $row, 'name' => $name, 'old' => null, 'new' => $price];
-        $jcl = [cell_number($sheet, "D$row"), cell_number($sheet, "E$row"), cell_number($sheet, "F$row")];
+        $entry = ['row' => $i + 1, 'name' => $name, 'old' => null, 'new' => $price];
 
         if ($name === '' || $price === null || $price <= 0) {
             $entry += ['status' => 'skipped', 'reason' => 'Missing name or price'];
-        } elseif (in_array(null, $jcl, true)) {
-            $entry += ['status' => 'skipped', 'reason' => 'JCL 1/2/3 yr must be numbers'];
         } elseif (!$parsed = parse_variant_name($name)) {
             $entry += ['status' => 'skipped', 'reason' => 'Name not in the "PC PIXEL NAME (RAM/SSD) SET GPU" format'];
         } elseif (!isset($products[$parsed['key']])) {
@@ -155,7 +153,7 @@ try {
                 $entry += ['status' => 'not_found', 'reason' => 'No matching RAM / SSD / set / GPU option for this PC'];
             } else {
                 foreach ($matches as $v) {
-                    $update->execute([$price, round($jcl[0], 2), round($jcl[1], 2), round($jcl[2], 2), $v['id']]);
+                    $update->execute([$price, jcl_monthly($price, 12), jcl_monthly($price, 24), jcl_monthly($price, 36), $v['id']]);
                 }
                 $entry['old'] = (float)$matches[0]['price'];
                 $entry['status'] = 'updated';
@@ -184,7 +182,7 @@ try {
     // History for the dashboard (database/price_sync_log.sql). Saving it must never undo a sync that already worked
     try {
         $pdo->prepare('INSERT INTO price_sync_log (filename, admin, rows_updated, prices_changed, skipped, not_found, products) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([mb_substr($file['name'], 0, 255), $_SESSION['admin_username'] ?? null, $counts['updated'], $counts['changed'], $counts['skipped'], $counts['not_found'], count($touched)]);
+            ->execute(['Google Sheets (' . GSHEET_RANGE . ')', $_SESSION['admin_username'] ?? null, $counts['updated'], $counts['changed'], $counts['skipped'], $counts['not_found'], count($touched)]);
     } catch (PDOException $e) {
         error_log('Price sync history not saved: ' . $e->getMessage());
     }

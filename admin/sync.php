@@ -18,19 +18,13 @@ admin_open('Price Sync', 'sync');
     <header class="admin-page-head">
         <div>
             <h1>Price Sync</h1>
-            <p class="admin-page-sub">Upload the PixelCraft Price Sync Reference Excel file to update all variant prices.</p>
+            <p class="admin-page-sub">Pull the latest variant prices from the PixelCraft Google Sheet. JCL instalments are worked out from each price (flat 1.25% a month).</p>
         </div>
     </header>
 
-    <form id="syncForm" class="sync-upload" action="sync_handler.php" method="POST" enctype="multipart/form-data">
+    <form id="syncForm" action="sync_handler.php" method="POST">
         <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
-        <label class="sync-drop" for="syncFile">
-            <span class="sync-drop-icon">📄</span>
-            <span id="syncFileName" class="sync-drop-text">Choose <strong>PixelCraft_PriceSync_Reference.xlsx</strong></span>
-            <span class="sync-drop-hint">.xlsx only · max 5 MB · reads the "SUMMARY (DB Import)" sheet</span>
-        </label>
-        <input type="file" id="syncFile" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
-        <button type="submit" id="syncBtn" class="btn" disabled>Upload &amp; Sync</button>
+        <button type="submit" id="syncBtn" class="btn">Sync from Google Sheets</button>
     </form>
 
     <div id="syncError" class="sync-error" role="alert" hidden></div>
@@ -56,7 +50,6 @@ admin_open('Price Sync', 'sync');
 <script>
 (function () {
     const form = document.getElementById('syncForm');
-    const input = document.getElementById('syncFile');
     const btn = document.getElementById('syncBtn');
     const errorBox = document.getElementById('syncError');
     const results = document.getElementById('syncResults');
@@ -75,19 +68,9 @@ admin_open('Price Sync', 'sync');
         errorBox.hidden = false;
     }
 
-    input.addEventListener('change', () => {
-        const f = input.files[0];
-        document.getElementById('syncFileName').textContent = f ? f.name : 'Choose PixelCraft_PriceSync_Reference.xlsx';
-        btn.disabled = !f;
-    });
-
     form.addEventListener('submit', async (ev) => {
         ev.preventDefault();
-        const f = input.files[0];
-        if (!f) return;
         errorBox.hidden = true;
-        if (!/\.xlsx$/i.test(f.name)) return showError('Only .xlsx files are accepted.');
-        if (f.size > 5 * 1024 * 1024) return showError('The file is too large. Maximum size is 5 MB.');
 
         btn.disabled = true;
         btn.textContent = 'Syncing…';
@@ -125,8 +108,8 @@ admin_open('Price Sync', 'sync');
         } catch (err) {
             showError(err.message);
         } finally {
-            btn.disabled = !input.files[0];
-            btn.textContent = 'Upload & Sync';
+            btn.disabled = false;
+            btn.textContent = 'Sync from Google Sheets';
         }
     });
 })();

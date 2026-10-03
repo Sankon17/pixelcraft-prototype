@@ -20,8 +20,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     exit;
 }
 
-$username = $_SESSION['admin_username'] ?? 'admin';
-
 require_once '../includes/db.php';
 require_once '../includes/cart.php'; // order statuses, rm_price(), order_number()
 
@@ -128,6 +126,8 @@ function ago(string $ts): string
 $fmt_date = fn(string $ts) => date('j M Y, g:i a', strtotime($ts));
 $hour = (int)date('G');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
+// Not $username: includes/db.php sets that to the DB user ("root")
+$admin_name = trim($_SESSION['admin_username'] ?? '') ?: 'Admin';
 $needs = count($attention['live']);
 
 admin_open('Dashboard', 'dashboard');
@@ -135,7 +135,7 @@ admin_open('Dashboard', 'dashboard');
         <header class="admin-page-head">
             <div>
                 <p class="admin-eyebrow"><?= date('l, j F Y') ?></p>
-                <h1><?= $greeting ?>, <?= e($username) ?></h1>
+                <h1><?= $greeting ?>, <?= e($admin_name) ?></h1>
                 <p class="admin-page-sub">Here's how the store looks right now.</p>
             </div>
             <div class="admin-page-actions">
