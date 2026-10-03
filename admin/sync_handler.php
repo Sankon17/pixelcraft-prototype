@@ -1,6 +1,7 @@
 <?php
 // Price Sync: reads variant names and prices from the Google Sheet in includes/google_config.php and updates
 // product_variants (price, plus JCL 1/2/3 yr worked out from it), then sets products.price to each PC's cheapest variant.
+// Rows that aren't PC variants (laptops, chairs, accessories) update products.price when the name matches a product exactly.
 // Called by sync.php with fetch(); always answers with JSON.
 session_start();
 require_once '../includes/db.php';
@@ -82,7 +83,6 @@ function fetch_sheet_rows(): array
     $body = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $curl_error = curl_error($ch);
-    curl_close($ch);
 
     if ($body === false) {
         sync_fail('Could not reach Google Sheets, nothing was changed. (' . $curl_error . ')', 502);
@@ -123,7 +123,14 @@ try {
         $variants[variant_key((int)$v['product_id'], $v['ram'], $v['storage'], $v['set_type'], $v['gpu_variant'])][] = $v;
     }
 
+    // Every product by exact name, ignoring case, for rows that aren't PC variants
+    $by_name = [];
+    foreach ($pdo->query('SELECT p.id, p.name, p.price, (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id) AS variant_count FROM products p') as $p) {
+        $by_name[mb_strtolower(trim($p['name']))][] = $p;
+    }
+
     $update = $pdo->prepare('UPDATE product_variants SET price = ?, jcl_1yr = ?, jcl_2yr = ?, jcl_3yr = ? WHERE id = ?');
+    $update_product = $pdo->prepare('UPDATE products SET price = ? WHERE id = ?');
     $log = [];
     $counts = ['updated' => 0, 'changed' => 0, 'skipped' => 0, 'not_found' => 0];
     $touched = [];
@@ -143,7 +150,23 @@ try {
         if ($name === '' || $price === null || $price <= 0) {
             $entry += ['status' => 'skipped', 'reason' => 'Missing name or price'];
         } elseif (!$parsed = parse_variant_name($name)) {
-            $entry += ['status' => 'skipped', 'reason' => 'Name not in the "PC PIXEL NAME (RAM/SSD) SET GPU" format'];
+            // Not a PC variant: a laptop, chair or accessory named exactly as in Products
+            $found = $by_name[mb_strtolower($name)] ?? [];
+            if (!$found) {
+                $entry += ['status' => 'not_found', 'reason' => 'No PC variant or product with exactly this name'];
+            } elseif (array_filter($found, fn($p) => $p['variant_count'] > 0)) {
+                // The store charges each option's own price, so products.price alone would change nothing for customers
+                $entry['old'] = (float)$found[0]['price'];
+                $entry += ['status' => 'skipped', 'reason' => 'This product has options; set their prices on the Variants page'];
+            } else {
+                foreach ($found as $p) {
+                    $update_product->execute([$price, $p['id']]);
+                }
+                $entry['old'] = (float)$found[0]['price'];
+                $entry['status'] = 'updated';
+                $entry['changed'] = abs($entry['old'] - $price) >= 0.005;
+                $counts['changed'] += $entry['changed'] ? 1 : 0;
+            }
         } elseif (!isset($products[$parsed['key']])) {
             $entry += ['status' => 'not_found', 'reason' => 'No PC called "' . $parsed['key'] . '" with variants'];
         } else {
