@@ -110,6 +110,7 @@ try {
 }
 $open_total = array_sum(array_map(fn($s) => (int)($by_status[$s] ?? 0), OPEN_STATUSES));
 $pending    = (int)($by_status['pending'] ?? 0);
+$all_orders = (int)array_sum($by_status); // every order ever placed, cancelled ones included
 $statuses   = order_statuses();
 
 // "3 h ago", "2 days ago"
@@ -157,6 +158,12 @@ admin_open('Dashboard', 'dashboard');
                 <span class="dash-stat-label">Orders to fulfil</span>
                 <strong><?= $pending ?><small> awaiting</small></strong>
                 <span class="dash-stat-note<?= $pending ? ' is-warn' : '' ?>"><?= $open_total - $pending ?> more in progress · <?= (int)($by_status['shipped'] ?? 0) ?> shipped</span>
+            </a>
+            <a href="orders.php" class="dash-stat is-purple">
+                <span class="dash-stat-icon"><?= admin_icon('orders') ?></span>
+                <span class="dash-stat-label">Total orders</span>
+                <strong><?= number_format($all_orders) ?></strong>
+                <span class="dash-stat-note">All time · <?= (int)($by_status['cancelled'] ?? 0) ?> cancelled</span>
             </a>
             <a href="products.php" class="dash-stat is-blue">
                 <span class="dash-stat-icon"><?= admin_icon('eye') ?></span>

@@ -210,6 +210,14 @@ try {
         error_log('Price sync history not saved: ' . $e->getMessage());
     }
 
+    // Results table order: price changed, skipped, not found, then unchanged; sheet order within each (usort is stable)
+    $rank = fn(array $e) => match ($e['status']) {
+        'updated'   => empty($e['changed']) ? 3 : 0,
+        'skipped'   => 1,
+        'not_found' => 2,
+    };
+    usort($log, fn($a, $b) => $rank($a) <=> $rank($b));
+
     echo json_encode($counts + ['products' => count($touched), 'log' => $log]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {

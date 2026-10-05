@@ -1750,7 +1750,7 @@ img { max-width: 100%; display: block; }
 .admin-btn-icon .icon { width: 16px; height: 16px; }
 
 /* ── Dashboard: stat tiles, each with its own colour ─────────────────── */
-.dash-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
+.dash-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
 .dash-stat {
     --c: var(--a-blue);
     position: relative;
@@ -1875,11 +1875,12 @@ a.dash-list-main:hover strong { color: var(--red-text); }
 /* Orders to fulfil */
 .dash-grid > * { min-width: 0; } /* long one-line notes shorten with "…" instead of widening the column */
 .dash-orders .dash-list-main strong { display: flex; align-items: baseline; gap: 8px; font-size: 15px; }
-.dash-orders .order-id { font-size: 14px; }
+.dash-orders .order-id { font-size: 17px; }
+a.dash-list-main:hover .order-id { color: var(--red-text); }
 .dash-orders .dash-list-main small { margin-top: 2px; font-size: 13px; }
 .dash-order-end { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 5px; }
 .dash-order-end b { color: #fff; font-size: 14px; white-space: nowrap; }
-.dash-card-more { display: inline-block; margin-top: 16px; color: var(--red-text); font-size: 14px; font-weight: 600; }
+.dash-card-more { display: inline-block; margin-top: 16px; color: #fff; font-size: 14px; font-weight: 600; }
 .dash-card-more:hover { text-decoration: underline; }
 .dash-pill { flex-shrink: 0; padding: 3px 10px; background: color-mix(in srgb, var(--c) 15%, transparent); border-radius: 999px; color: var(--c); font-size: 12px; font-weight: 700; white-space: nowrap; }
 
@@ -1977,8 +1978,8 @@ a.dash-list-main:hover strong { color: var(--red-text); }
     .oc-fields { grid-template-columns: 1fr; }
 }
 .orders-table td { padding-top: 14px; padding-bottom: 14px; }
-.order-id { color: var(--red-text); font-weight: 800; }
-.order-id:hover { text-decoration: underline; }
+.order-id { color: #fff; font-size: 17px; font-weight: 800; }
+.order-id:hover { color: var(--red-text); text-decoration: underline; }
 .order-phone, .order-date { white-space: nowrap; }
 .order-date small { display: block; }
 .order-back { display: inline-block; margin-bottom: 14px; color: var(--muted); font-weight: 600; }
@@ -2048,6 +2049,7 @@ a.dash-list-main:hover strong { color: var(--red-text); }
 }
 @media (max-width: 1100px) {
     .dash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dash-stat:last-child:nth-child(odd) { grid-column: 1 / -1; } /* odd card out fills the last row */
     .dash-grid { grid-template-columns: 1fr; }
 }
 /* Phones and small tablets: the sidebar turns into a bar across the top */
@@ -2122,7 +2124,12 @@ a.dash-list-main:hover strong { color: var(--red-text); }
 .sync-stat.is-not_found { border-top-color: var(--red); }
 .sync-note { margin: 12px 0 18px; color: var(--muted); font-size: 14px; }
 
-.sync-log { max-height: 560px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+/* Grows with the page; clip (not auto) keeps the rounded corners without its own scrollbar, so the header sticks to the window */
+.sync-log { overflow: clip; border: 1px solid var(--border); border-radius: var(--radius); }
+/* Narrow screens: the table is wider than the screen, so it scrolls in a box that fills the screen under the top bar */
+@media (max-width: 900px) {
+    .sync-log { max-height: calc(100dvh - 120px); overflow: auto; }
+}
 .sync-log table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .sync-log th {
     position: sticky; top: 0;
