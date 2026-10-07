@@ -56,6 +56,14 @@ function variant_key(int $product_id, string $ram, string $storage, string $set_
     return implode('|', [$product_id, $norm($ram), $norm($storage), $set_type, $norm($gpu)]);
 }
 
+// The same words in any order and case: "PRINTER CANON" and "Canon Printer" both give "canon printer"
+function word_key(string $name): string
+{
+    $words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($name), -1, PREG_SPLIT_NO_EMPTY);
+    sort($words);
+    return implode(' ', $words);
+}
+
 // 1759, "1759", "RM 1,759.00" → 1759.0; anything else → null
 function sheet_number($v): ?float
 {
@@ -125,8 +133,10 @@ try {
 
     // Every product by exact name, ignoring case, for rows that aren't PC variants
     $by_name = [];
+    $by_words = []; // same words, any order: the fallback when the exact name isn't found
     foreach ($pdo->query('SELECT p.id, p.name, p.price, (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id) AS variant_count FROM products p') as $p) {
         $by_name[mb_strtolower(trim($p['name']))][] = $p;
+        $by_words[word_key($p['name'])][] = $p;
     }
 
     $update = $pdo->prepare('UPDATE product_variants SET price = ?, jcl_1yr = ?, jcl_2yr = ?, jcl_3yr = ? WHERE id = ?');
@@ -151,9 +161,13 @@ try {
             $entry += ['status' => 'skipped', 'reason' => 'Missing name or price'];
         } elseif (!$parsed = parse_variant_name($name)) {
             // Not a PC variant: a laptop, chair or accessory named exactly as in Products
+            // Exact name first; else the same words in another order, if that is one product only ("PRINTER CANON" = "Canon Printer")
             $found = $by_name[mb_strtolower($name)] ?? [];
+            if (!$found && count($by_words[word_key($name)] ?? []) === 1) {
+                $found = $by_words[word_key($name)];
+            }
             if (!$found) {
-                $entry += ['status' => 'not_found', 'reason' => 'No PC variant or product with exactly this name'];
+                $entry += ['status' => 'not_found', 'reason' => 'No PC variant or product with this name'];
             } elseif (array_filter($found, fn($p) => $p['variant_count'] > 0)) {
                 // The store charges each option's own price, so products.price alone would change nothing for customers
                 $entry['old'] = (float)$found[0]['price'];

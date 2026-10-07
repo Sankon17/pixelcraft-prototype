@@ -168,6 +168,8 @@ const SET_TYPES = ['cpu_only' => 'CPU Only', 'full_set' => 'Full Set'];
 // The only RAM / SSD sizes a variant can have (32GB is for high-end builds like Pixel Raptor)
 const RAM_OPTIONS = ['8GB', '16GB', '32GB'];
 const STORAGE_OPTIONS = ['256GB', '512GB', '1TB'];
+// Casing colours a PC can come in (Pixel Neo is black only; Pixel Core XII also comes in pink). A PC with 2+ shows a Color choice
+const COLOR_OPTIONS = ['Black', 'White', 'Pink'];
 
 // ['8GB', '16GB', '32GB'] → "8GB, 16GB or 32GB"
 function or_list(array $items): string
@@ -191,7 +193,7 @@ function has_specs(?array $category): bool
 
 function variants_of(PDO $pdo, int $id): array
 {
-    $stmt = $pdo->prepare('SELECT id, option_name, option_values, ram, storage, set_type, gpu_variant AS gpu, price, stock FROM product_variants WHERE product_id = ? ORDER BY price, id');
+    $stmt = $pdo->prepare('SELECT id, option_name, option_values, ram, storage, set_type, gpu_variant AS gpu, color, price, stock FROM product_variants WHERE product_id = ? ORDER BY price, id');
     $stmt->execute([$id]);
     return array_map(fn($v) => ['remove' => false] + $v, $stmt->fetchAll());
 }
@@ -225,6 +227,7 @@ function read_variants(array $rows): array
             'storage'  => trim((string)($row['storage'] ?? '')),
             'set_type' => (string)($row['set_type'] ?? 'cpu_only'),
             'gpu'      => trim((string)($row['gpu'] ?? '')),
+            'color'    => trim((string)($row['color'] ?? '')) ?: 'Black',
             'price'    => trim((string)($row['price'] ?? '')),
             'stock'    => trim((string)($row['stock'] ?? '')),
             'remove'   => !empty($row['remove']),
@@ -249,11 +252,12 @@ function variant_errors(array $variants): array
         }
         if (mb_strlen($v['gpu']) > 100) $errors[] = "$row: graphics card must be 100 characters or fewer.";
         if (!isset(SET_TYPES[$v['set_type']])) $errors[] = "$row: choose CPU Only or Full Set.";
+        if (!in_array($v['color'], COLOR_OPTIONS, true)) $errors[] = "$row: colour must be " . or_list(COLOR_OPTIONS) . '.';
         if (!is_numeric($v['price']) || $v['price'] <= 0) $errors[] = "$row needs a price above 0.";
         if (!ctype_digit($v['stock'])) $errors[] = "$row: stock must be a whole number of 0 or more.";
-        // The store picks a variant by these four; two identical ones could never both be chosen
-        $key = mb_strtolower($v['ram'] . '|' . $v['storage'] . '|' . $v['set_type'] . '|' . $v['gpu']);
-        if (isset($seen[$key])) $errors[] = "$row is the same as variant {$seen[$key]} (RAM, storage, set and graphics card).";
+        // The store picks a variant by these five; two identical ones could never both be chosen
+        $key = mb_strtolower($v['ram'] . '|' . $v['storage'] . '|' . $v['set_type'] . '|' . $v['gpu'] . '|' . $v['color']);
+        if (isset($seen[$key])) $errors[] = "$row is the same as variant {$seen[$key]} (RAM, storage, set, graphics card and colour).";
         $seen[$key] ??= $n + 1;
     }
     return $errors;
@@ -457,19 +461,19 @@ function save_variants(PDO $pdo, int $product_id, array $variants): array
             $pdo->prepare('DELETE FROM product_variants WHERE id = ?')->execute([$v['id']]);
             $counts[2]++;
         } elseif ($old) {
-            $same = [$old['ram'], $old['storage'], $old['set_type'], (string)$old['gpu'], (float)$old['price'], (int)$old['stock'], (string)$old['option_name'] . $old['option_values']]
-                === [$v['ram'], $v['storage'], $v['set_type'], $v['gpu'], $price, (int)$v['stock'], ''];
+            $same = [$old['ram'], $old['storage'], $old['set_type'], (string)$old['gpu'], (string)$old['color'], (float)$old['price'], (int)$old['stock'], (string)$old['option_name'] . $old['option_values']]
+                === [$v['ram'], $v['storage'], $v['set_type'], $v['gpu'], $v['color'], $price, (int)$v['stock'], ''];
             if ($same) continue;
             // option_name is cleared: a variant from when this was an accessory is now named by its RAM / SSD
-            $pdo->prepare('UPDATE product_variants SET option_name = NULL, option_values = NULL, ram = ?, storage = ?, set_type = ?, gpu_variant = ?, price = ?, stock = ? WHERE id = ?')
-                ->execute([$v['ram'], $v['storage'], $v['set_type'], $gpu, $price, (int)$v['stock'], $v['id']]);
+            $pdo->prepare('UPDATE product_variants SET option_name = NULL, option_values = NULL, ram = ?, storage = ?, set_type = ?, gpu_variant = ?, color = ?, price = ?, stock = ? WHERE id = ?')
+                ->execute([$v['ram'], $v['storage'], $v['set_type'], $gpu, $v['color'], $price, (int)$v['stock'], $v['id']]);
             if ($price !== (float)$old['price']) {
                 $pdo->prepare('UPDATE product_variants SET jcl_1yr = ?, jcl_2yr = ?, jcl_3yr = ? WHERE id = ?')->execute([...$jcl($price), $v['id']]);
             }
             $counts[1]++;
         } elseif (!$v['remove']) {
-            $pdo->prepare('INSERT INTO product_variants (product_id, ram, storage, set_type, gpu_variant, price, jcl_1yr, jcl_2yr, jcl_3yr, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([$product_id, $v['ram'], $v['storage'], $v['set_type'], $gpu, $price, ...$jcl($price), (int)$v['stock']]);
+            $pdo->prepare('INSERT INTO product_variants (product_id, ram, storage, set_type, gpu_variant, color, price, jcl_1yr, jcl_2yr, jcl_3yr, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$product_id, $v['ram'], $v['storage'], $v['set_type'], $gpu, $v['color'], $price, ...$jcl($price), (int)$v['stock']]);
             $counts[0]++;
         }
     }
@@ -945,7 +949,7 @@ admin_open('Products', 'products');
         $show_specs   = !$form['category_id'] || has_specs(find_category($categories, $form['category_id']));
         $show_options = !$show_specs;
         // One spare empty row each, so a variant can be added even without JavaScript
-        $variant_rows = [...$form['variants'], ['id' => 0, 'ram' => '', 'storage' => '', 'set_type' => 'cpu_only', 'gpu' => '', 'price' => '', 'stock' => '10', 'remove' => false]];
+        $variant_rows = [...$form['variants'], ['id' => 0, 'ram' => '', 'storage' => '', 'set_type' => 'cpu_only', 'gpu' => '', 'color' => 'Black', 'price' => '', 'stock' => '10', 'remove' => false]];
         // With variants the price is the cheapest one's: shown in the price box, which is then locked
         $variant_prices = array_map(fn($v) => (float)$v['price'], array_filter($show_specs ? $form['variants'] : $form['options']['rows'], fn($v) => !($v['remove'] ?? false) && is_numeric($v['price']) && $v['price'] > 0));
         $price_locked = (bool)$variant_prices;
@@ -1025,6 +1029,7 @@ admin_open('Products', 'products');
                                 <th>Storage</th>
                                 <th>Set</th>
                                 <th>Graphics card <small>if it varies</small></th>
+                                <th>Colour</th>
                                 <th>Price (RM)</th>
                                 <th>JCL 3 yrs</th>
                                 <th>Stock</th>
@@ -1059,6 +1064,13 @@ admin_open('Products', 'products');
                                     </select>
                                 </td>
                                 <td><input type="text" name="variants[<?= $i ?>][gpu]" value="<?= e($v['gpu']) ?>" maxlength="100" placeholder="optional" aria-label="Graphics card"></td>
+                                <td>
+                                    <select name="variants[<?= $i ?>][color]" aria-label="Colour">
+                                        <?php foreach (COLOR_OPTIONS as $colour): ?>
+                                        <option value="<?= $colour ?>"<?= $v['color'] === $colour ? ' selected' : '' ?>><?= $colour ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
                                 <td><input type="number" name="variants[<?= $i ?>][price]" value="<?= e($v['price']) ?>" min="0" step="0.01" placeholder="0.00" aria-label="Price" data-variant-price></td>
                                 <td class="ap-jcl" data-jcl><?= is_numeric($v['price']) && $v['price'] > 0 ? 'RM ' . number_format(jcl_monthly((float)$v['price'], 36), 2) : '—' ?></td>
                                 <td><input type="number" name="variants[<?= $i ?>][stock]" value="<?= e($v['stock']) ?>" min="0" step="1" aria-label="Stock"></td>
@@ -1083,7 +1095,7 @@ admin_open('Products', 'products');
                     Add a variation type, such as Colour or Fabric, and its options. Every combination becomes a variant
                     with its own price and stock, and the cheapest is the "From" price. Leave empty if there's only one version.
                 </p>
-                <input type="hidden" name="options[on]" value="1">
+                <?php // options[on] is added by the script once the editor is drawn: without it the server leaves the variants alone ?>
                 <div class="ov-types" data-option-types></div>
                 <button type="button" class="btn btn-sm btn-outline ap-add-variant" data-add-type>＋ Add variation type</button>
 
@@ -1333,6 +1345,8 @@ admin_open('Products', 'products');
             });
             renderTypes();
             renderTable();
+            // Only now is the editor showing every variant, so only now may a save replace them
+            ov.append(make('input', { type: 'hidden', name: 'options[on]', value: '1' }));
         })();
 
         // PCs and laptops: specs, YouTube and RAM/SSD variants. Accessories: their variation types. Disabled fieldsets aren't sent

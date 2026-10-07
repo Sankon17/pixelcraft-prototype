@@ -22,8 +22,26 @@ $nav_active = $nav_active ?? ($current === 'pc-categories.php' ? 'pcs' : '');
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Michroma&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= asset($base, 'assets/css/style.css') ?>">
+    <script>
+        // Intro splash: plays on the first page of a visit only, and never for people who turn off motion.
+        // Decided here, before the page draws, so the splash doesn't flash in late
+        try {
+            if (!sessionStorage.getItem('pc-intro') && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.documentElement.classList.add('has-intro');
+                sessionStorage.setItem('pc-intro', '1');
+            }
+        } catch (e) {}
+    </script>
 </head>
 <body class="site">
+
+<div class="intro-screen" aria-hidden="true">
+    <div class="intro-inner">
+        <img src="<?= e(asset($base, 'assets/images/logo/pixelcraft-mark.png')) ?>" alt="" class="intro-logo">
+        <span class="intro-bar"><span></span></span>
+        <p class="intro-tag">Custom PC Builder</p>
+    </div>
+</div>
 
 <header class="site-header">
     <nav class="nav">

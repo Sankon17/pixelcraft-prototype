@@ -2000,6 +2000,7 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 }
 .order-status-form select:focus { outline: none; border-color: var(--red); }
 .order-status-form .btn { font-family: inherit; }
+.order-status-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .order-items-card .ap-table tfoot th, .order-items-card .ap-table tfoot td { padding: 14px 12px; border-top: 1px solid #2a2a2a; font-size: 15px; }
 .ap-table td.order-total { color: var(--red-text); font-size: 18px !important; font-weight: 800; }
 .ap-table thead th.ap-num { text-align: right; }
@@ -2764,3 +2765,73 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 .pd-features ul { display: grid; gap: 8px; list-style: none; }
 .pd-features li { position: relative; padding-left: 26px; color: #e6e6e6; font-size: 14px; line-height: 1.5; }
 .pd-features li::before { content: "✓"; position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 18px; height: 18px; background: rgba(209, 0, 0, 0.18); border-radius: 50%; color: var(--red-text); font-size: 11px; font-weight: 800; }
+
+/* MOTION: intro splash, page-to-page transitions, hero entrance and scroll reveals.
+   All of it is skipped for people who turn off motion in their system settings */
+:root { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-in-out: cubic-bezier(0.7, 0, 0.2, 1); --intro-delay: 0s; }
+.intro-screen { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+    /* Intro splash (first page of a visit; header.php adds .has-intro): the logo powers on, a red bar loads,
+       then the screen wipes up to show the page. Pure CSS, so it still leaves if main.js fails to load */
+    .has-intro { --intro-delay: 1.45s; } /* the hero waits for the wipe */
+    .has-intro .intro-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at 50% 45%, #1f0000 0%, var(--black) 62%);
+        cursor: pointer;
+        animation: intro-wipe 0.7s var(--ease-in-out) 1.35s forwards;
+    }
+    .has-intro.intro-skip { --intro-delay: 0s; } /* clicked to skip: the splash fades and the hero comes straight in */
+    .has-intro.intro-skip .intro-screen { animation: intro-fade 0.3s ease forwards; }
+    .intro-inner { display: flex; flex-direction: column; align-items: center; gap: 22px; animation: intro-lift 0.7s var(--ease-in-out) 1.35s forwards; }
+    .intro-logo { width: min(230px, 58vw); height: auto; animation: intro-logo 1s var(--ease-out) both; }
+    .intro-bar { width: 180px; height: 2px; background: #222; border-radius: 2px; overflow: hidden; }
+    .intro-bar span { display: block; height: 100%; background: var(--red); box-shadow: 0 0 12px var(--red); transform-origin: left; animation: intro-bar 1s cubic-bezier(0.65, 0, 0.35, 1) 0.25s both; }
+    .intro-tag { padding-left: 6px; color: var(--muted); font-family: 'Michroma', sans-serif; font-size: 11px; letter-spacing: 6px; text-transform: uppercase; animation: intro-tag 0.9s var(--ease-out) 0.45s both; }
+
+    @keyframes intro-logo { from { opacity: 0; transform: scale(0.88); filter: blur(12px) brightness(2); } }
+    @keyframes intro-bar  { from { transform: scaleX(0); } }
+    @keyframes intro-tag  { from { opacity: 0; transform: translateY(6px); } }
+    @keyframes intro-lift { to { opacity: 0; transform: translateY(-40px); } }
+    @keyframes intro-wipe { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 100% 0); visibility: hidden; } }
+    @keyframes intro-fade { to { opacity: 0; visibility: hidden; } }
+
+    /* Page-to-page: the header stays put while the page underneath cross-fades
+       (browsers without cross-page view transitions just get the content rising in below) */
+    @view-transition { navigation: auto; }
+    .site-header { view-transition-name: site-header; }
+    ::view-transition-old(root) { animation: vt-out 0.2s ease-in both; }
+    ::view-transition-new(root) { animation: vt-in 0.35s var(--ease-out) both; }
+    @keyframes vt-out { to { opacity: 0; } }
+    @keyframes vt-in { from { opacity: 0; } }
+
+    body.site > main { animation: rise-in 0.6s var(--ease-out) backwards; }
+
+    /* Hero entrance: the store photo settles in while the text comes up line by line.
+       "backwards" (not "both") so nothing keeps a transform once it's done */
+    .hero::before { animation: hero-photo 1.8s var(--ease-out) var(--intro-delay) backwards; }
+    .hero-content { animation: rise-in 0.9s var(--ease-out) var(--intro-delay) backwards; }
+    :is(.hero-content, .page-hero) > * { animation: rise-in 0.8s var(--ease-out) backwards; animation-delay: calc(var(--intro-delay) + 0.12s + var(--step, 0) * 0.09s); }
+    :is(.hero-content, .page-hero) > :nth-child(2) { --step: 1; }
+    :is(.hero-content, .page-hero) > :nth-child(3) { --step: 2; }
+    :is(.hero-content, .page-hero) > :nth-child(4) { --step: 3; }
+    :is(.hero-content, .page-hero) > :nth-child(n+5) { --step: 4; }
+
+    @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } }
+    @keyframes hero-photo { from { opacity: 0.3; transform: scale(1.12); } }
+
+    /* Scroll reveal: main.js tags cards and headings below the fold with .reveal, then adds .is-visible
+       as each one scrolls into view (and takes both classes off again afterwards so hover effects are untouched) */
+    body.site .reveal { opacity: 0; translate: 0 28px; }
+    body.site .reveal.is-visible { opacity: 1; translate: none; transition: opacity 0.7s var(--ease-out), translate 0.7s var(--ease-out); } /* only on the way in, so tagging hides instantly */
+}
+
+/* Printing (e.g. a receipt) shows everything as it is, whatever has or hasn't scrolled into view */
+@media print {
+    .intro-screen { display: none !important; }
+    body.site .reveal { opacity: 1 !important; translate: none !important; }
+}

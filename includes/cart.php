@@ -177,7 +177,7 @@ function variant_detail(array $v): string
         $v['ram'] . ' / ' . $v['storage'],
         ['cpu_only' => 'CPU Only', 'full_set' => 'Full Set'][$v['set_type']] ?? '',
         $v['gpu_variant'],
-        strcasecmp((string)$v['color'], 'Black') ? $v['color'] : null,
+        $v['color'], // always named, now that most PCs come in Black or White
     ]));
 }
 

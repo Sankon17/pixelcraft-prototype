@@ -72,6 +72,9 @@ admin_open('Order ' . order_number($id), 'orders');
                         <?php endforeach; ?>
                     </select>
                     <button type="submit" class="btn">Update Status</button>
+                    <p class="order-status-note"><?= $order['status'] === 'cancelled'
+                        ? "This order's items are back in stock. Choosing another status takes them from stock again."
+                        : "Cancelling puts this order's items back in stock." ?></p>
                 </form>
             </section>
         </div>

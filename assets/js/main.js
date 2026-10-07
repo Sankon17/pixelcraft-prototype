@@ -1,5 +1,54 @@
 // Mobile nav toggle and category scroller
 document.addEventListener('DOMContentLoaded', () => {
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Intro splash (the animation itself is CSS): click or press a key to skip it, and drop it once it's gone
+    const intro = document.querySelector('.intro-screen');
+    if (intro && !document.documentElement.classList.contains('has-intro')) {
+        intro.remove();
+    } else if (intro) {
+        const skip = () => document.documentElement.classList.add('intro-skip');
+        intro.addEventListener('click', skip);
+        document.addEventListener('keydown', skip, { once: true });
+        intro.addEventListener('animationend', e => {
+            if (e.target !== intro) return;
+            intro.remove();
+            document.removeEventListener('keydown', skip);
+        });
+    }
+
+    // Scroll reveal: cards and headings below the fold fade up as they come into view, a beat apart.
+    // Anything already on screen is left alone (the page's own entrance covers it)
+    const REVEAL = [
+        '.section-head', '.spotlight', '.category-scroller', '.empty-state', '.cta-box', '.store-card', '.map-frame', '.jcl-intro',
+        '.product-grid > *', '.pc-grid > *', '.svc-grid > *', '.svc-packages > *', '.svc-trust > *', '.cap-grid > *',
+        '.jcl-grid > *', '.visit-grid > *', '.partner-banner-inner > :is(h2, p)', '.partner-feature > *',
+        '.seller-block > :is(h3, p)', '.seller-grid > *', '.footer-inner > *',
+    ].join(',');
+    if (!still && 'IntersectionObserver' in window && document.body.classList.contains('site')) {
+        const targets = [...document.querySelectorAll(REVEAL)].filter(el =>
+            el.getBoundingClientRect().top > window.innerHeight && !el.parentElement.closest(REVEAL));
+
+        const observer = new IntersectionObserver(entries => {
+            entries.filter(en => en.isIntersecting).forEach((en, i) => {
+                const el = en.target;
+                const delay = Math.min(i * 80, 320); // things arriving together come in one after another
+                observer.unobserve(el);
+                el.style.transitionDelay = delay + 'ms';
+                el.classList.add('is-visible');
+                setTimeout(() => {
+                    el.classList.remove('reveal', 'is-visible');
+                    el.style.transitionDelay = '';
+                }, delay + 750);
+            });
+        }, { rootMargin: '0px 0px -8% 0px' });
+
+        targets.forEach(el => {
+            el.classList.add('reveal');
+            observer.observe(el);
+        });
+    }
+
     const header = document.querySelector('.site-header');
     const toggle = document.querySelector('.nav-toggle');
     if (header && toggle) {
@@ -153,7 +202,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (slides.length > 1) {
         const DELAY = 3000; // ms each build stays on screen
         const title = spot.querySelector('[data-spot-title]');
-        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         let current = 0;
         let timer = null;
 
