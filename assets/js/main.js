@@ -2,18 +2,25 @@
 document.addEventListener('DOMContentLoaded', () => {
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // Intro splash (the animation itself is CSS): click or press a key to skip it, and drop it once it's gone
+    // Homepage loading screen (the animation itself is CSS): click or press a key to skip it.
+    // It plays every time the homepage opens, including coming Back to it when the browser restores the page from memory
     const intro = document.querySelector('.intro-screen');
-    if (intro && !document.documentElement.classList.contains('has-intro')) {
-        intro.remove();
+    const root = document.documentElement;
+    if (intro && !root.classList.contains('has-intro')) {
+        intro.remove(); // motion turned off
     } else if (intro) {
-        const skip = () => document.documentElement.classList.add('intro-skip');
+        const skip = () => root.classList.add('intro-skip');
         intro.addEventListener('click', skip);
-        document.addEventListener('keydown', skip, { once: true });
+        document.addEventListener('keydown', skip);
         intro.addEventListener('animationend', e => {
             if (e.target !== intro) return;
-            intro.remove();
+            root.classList.add('intro-done');
             document.removeEventListener('keydown', skip);
+        });
+        window.addEventListener('pageshow', e => {
+            if (!e.persisted) return;
+            root.classList.remove('intro-done', 'intro-skip'); // shown again, so its animations start over
+            document.addEventListener('keydown', skip);
         });
     }
 
