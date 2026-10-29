@@ -151,8 +151,17 @@ try {
     foreach (array_slice($rows, 1, null, true) as $i => $cells) {
         $name  = trim((string)($cells[0] ?? ''));
         $price = sheet_number($cells[1] ?? null);
-        if ($name === '' && $price === null) {
+       if ($name === '' && $price === null) {
             continue; // blank row
+        }
+
+        // Category title rows ("LAPTOP", "CHAIR", "ACCESSORIES"): a name with no price that isn't a
+        // product or a PC variant. Ignore them so they don't show up as skipped rows.
+        if ($price === null
+            && !parse_variant_name($name)
+            && !isset($by_name[mb_strtolower($name)])
+            && !isset($by_words[word_key($name)])) {
+            continue;
         }
 
         $entry = ['row' => $i + 1, 'name' => $name, 'old' => null, 'new' => $price];
