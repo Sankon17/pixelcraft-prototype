@@ -65,7 +65,7 @@ function word_key(string $name): string
 }
 
 // 1759, "1759", "RM 1,759.00" → 1759.0; anything else → null
-function sheet_number($v): ?float
+function sheet_number(mixed $v): ?float
 {
     if (is_string($v)) {
         $v = str_replace([',', ' '], '', preg_replace('/^RM/i', '', trim($v)));
