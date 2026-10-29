@@ -298,12 +298,12 @@ $capabilities = [
         'title' => '🎬 Supported Software',
         'note'  => null,
         'items' => [
-            [['Prem',  '#00005B', '#9999FF'], 'Adobe Premiere Pro', 'Edit video 1080p smooth / 4K basic', 'ok',  '✓ Disokong'],
+            ['premiere-pro.png',              'Adobe Premiere Pro', 'Edit video 1080p smooth / 4K basic', 'ok',  '✓ Disokong'],
             ['davinci.png',                   'DaVinci Resolve',    '1080p edit / 4K dengan proxy',       'ok',  '✓ Disokong'],
-            [['Blend', '#EA7600', '#fff'],    'Blender',            '3D modelling & basic render',        'mid', '~ Sederhana'],
-            [['Ps',    '#001E36', '#31A8FF'], 'Adobe Photoshop',    'Photo editing penuh — lancar',       'ok',  '✓ Disokong'],
-            [['Lr',    '#001C33', '#74B8FD'], 'Adobe Lightroom',    'Edit & export gambar — lancar',      'ok',  '✓ Disokong'],
-            [['Ae',    '#FF61F6', '#fff'],    'After Effects',      'Motion graphics & composition HD',   'ok',  '✓ Disokong'],
+            ['blender.png',                   'Blender',            '3D modelling & basic render',        'mid', '~ Sederhana'],
+            ['photoshop.png',                 'Adobe Photoshop',    'Photo editing penuh — lancar',       'ok',  '✓ Disokong'],
+            ['lightroom.png',                 'Adobe Lightroom',    'Edit & export gambar — lancar',      'ok',  '✓ Disokong'],
+            ['after-effects.png',             'After Effects',      'Motion graphics & composition HD',   'ok',  '✓ Disokong'],
         ],
     ],
     'student' => [
@@ -436,6 +436,7 @@ require '../includes/header.php';
                 <span class="pd-ph-icon"><?= category_icon($product['category_slug']) ?></span>
                 <span class="logo"><?= logo_img('../', true) ?></span>
                 <span class="pd-ph-name"><?= e($product['name']) ?></span>
+                <span class="pd-ph-note">Image unavailable for now</span>
             </div>
             <?php endif; ?>
 

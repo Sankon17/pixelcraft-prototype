@@ -49,6 +49,10 @@ if ($slugs) {
         WHERE c.slug IN ($placeholders) AND p.is_active = 1 ORDER BY p.price ASC, p.id ASC");
     $stmt->execute($slugs);
     $products = $stmt->fetchAll();
+    // Products with a photo first, those still showing "Image unavailable" after them. usort is stable,
+    // so each group keeps the cheapest-first order from the query
+    $has_photo = fn(array $p): int => asset_image('../', 'products', $p['image']) !== null ? 0 : 1;
+    usort($products, fn($a, $b) => $has_photo($a) <=> $has_photo($b));
 }
 
 if ($filter !== '' && isset($by_slug[$filter]) && in_array($filter, $chip_slugs, true)) {

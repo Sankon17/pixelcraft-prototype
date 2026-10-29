@@ -373,6 +373,10 @@ img { max-width: 100%; display: block; }
 
 .product-img img { width: 100%; height: 100%; object-fit: cover; }
 .product-img.is-icon { font-size: 72px; }
+/* No photo yet: the category icon with "Image unavailable" under it (product_image() in includes/functions.php) */
+.is-icon { flex-direction: column; gap: 10px; }
+.img-ph-icon { line-height: 1; opacity: 0.55; }
+.img-ph-text { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
 
 .product-brand {
     font-size: 12px;
@@ -700,6 +704,7 @@ img { max-width: 100%; display: block; }
 }
 .pd-ph-icon { font-size: 96px; filter: drop-shadow(0 10px 30px rgba(209, 0, 0, 0.5)); }
 .pd-image-placeholder .logo-img { height: 80px; }
+.pd-ph-note { color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
 .pd-ph-name { color: var(--muted); font-size: 14px; }
 
 .pd-video { aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden; background: #000; }
@@ -2000,6 +2005,7 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 }
 .order-status-form select:focus { outline: none; border-color: var(--red); }
 .order-status-form .btn { font-family: inherit; }
+.order-status-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .order-items-card .ap-table tfoot th, .order-items-card .ap-table tfoot td { padding: 14px 12px; border-top: 1px solid #2a2a2a; font-size: 15px; }
 .ap-table td.order-total { color: var(--red-text); font-size: 18px !important; font-weight: 800; }
 .ap-table thead th.ap-num { text-align: right; }
@@ -2032,8 +2038,8 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 .acct-facts dd { margin-top: 2px; font-weight: 600; }
 .ap-form.acct-form { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 640px; }
 
-/* Laptop widths: the sidebar becomes a slim rail (icon with a small label under it), leaving room for the page */
-@media (max-width: 1399px) {
+/* Up to 1600px wide (most laptops and scaled monitors): the sidebar is a slim rail (icon with a small label under it), leaving room for the page */
+@media (max-width: 1599px) {
     .admin-body { --side-w: 92px; }
     .admin-side { padding: 18px 10px; gap: 20px; }
     .admin-brand { flex-direction: column; justify-content: center; gap: 6px; padding: 0; }
@@ -2279,11 +2285,6 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
    so it fits beside the filter boxes (phones have no room to spare) */
 @media (min-width: 1000px) {
     .ap-page .ap-edit { zoom: 1.15; }
-    /* A little tighter so the whole table (Edit/Delete included) still fits a laptop screen */
-    .ap-page .ap-table th,
-    .ap-page .ap-table td { padding-left: 6px; padding-right: 6px; }
-    .ap-page .ap-name { min-width: 150px; }
-    .ap-page .ap-table td.ap-spec { min-width: 120px; }
 }
 .ap-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; margin-bottom: 16px; }
 .ap-tabs { margin-bottom: 0; }
@@ -2379,15 +2380,13 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 .ap-filter-item em { color: #777; font-size: 12px; font-style: italic; }
 .ap-filter-item:has(input:checked) { background: rgba(209, 0, 0, 0.14); color: #fff; }
 .ap-filter-item:has(input:checked) em { color: #f2a0a0; }
-/* Narrower screens: one compact row per group above the list, so the table keeps its full width */
-@media (max-width: 1519px) {
-    .ap-list { grid-template-columns: 1fr; gap: 14px; }
-    .ap-filters { position: static; gap: 0; padding: 10px 12px; background: #121212; border: 1px solid #222; border-radius: 10px; }
-    .ap-filters-head { margin-bottom: 4px; }
-    .ap-filter-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 0; background: none; border: 0; border-top: 1px solid #1f1f1f; border-radius: 0; }
-    .ap-filter-group legend { float: left; width: 190px; margin: 0; padding: 0 8px 0 0; background: none; border: 0; color: #9a9a9a; font-size: 13px; }
-    .ap-filter-item { clear: none; display: inline-flex; margin: 0; padding: 5px 10px; background: #181818; font-size: 13px; }
-}
+/* Filters: one compact row per group in a panel above the list (at every screen width), so the table keeps its full width */
+.ap-list { grid-template-columns: 1fr; gap: 14px; }
+.ap-filters { position: static; gap: 0; padding: 10px 12px; background: #121212; border: 1px solid #222; border-radius: 10px; }
+.ap-filters-head { margin-bottom: 4px; }
+.ap-filter-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 0; background: none; border: 0; border-top: 1px solid #1f1f1f; border-radius: 0; }
+.ap-filter-group legend { float: left; width: 190px; margin: 0; padding: 0 8px 0 0; background: none; border: 0; color: #9a9a9a; font-size: 13px; }
+.ap-filter-item { clear: none; display: inline-flex; margin: 0; padding: 5px 10px; background: #181818; font-size: 13px; }
 @media (max-width: 700px) {
     .ap-filter-group legend { width: 100%; padding-bottom: 4px; }
 }
@@ -2501,6 +2500,25 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 .ap-btn-view:hover { background: transparent; border-color: #fff; color: #fff; box-shadow: none; }
 .ap-delete { background: transparent; border-color: var(--red); color: var(--red-text); }
 .ap-delete:hover { background: rgba(209, 0, 0, 0.15); border-color: var(--red); color: #fff; box-shadow: none; }
+
+/* Products list (admin/products.php): compact rows, so every column and all four buttons fit on screen without
+   scrolling sideways, and more products show at once. The page may also use more of a wide screen */
+.admin-main:has(.ap-page) { max-width: 1680px; }
+.ap-page .ap-table { font-size: 13px; }
+.ap-page .ap-table thead th { padding: 9px 8px; font-size: 11px; }
+.ap-page .ap-table td { padding: 6px 8px; }
+.ap-page .ap-section-toggle { padding-top: 8px; padding-bottom: 8px; }
+.ap-page .ap-thumb { width: 40px; height: 40px; font-size: 18px; }
+.ap-page .ap-name { min-width: 150px; max-width: 240px; }
+.ap-page .ap-name strong { line-height: 1.3; }
+.ap-page .ap-table td.ap-spec { min-width: 110px; font-size: 12px; }
+.ap-page .ap-cat { padding: 3px 8px; font-size: 11px; }
+.ap-page .ap-switch { gap: 6px; font-size: 12px; }
+.ap-page .ap-switch-knob { width: 30px; height: 18px; }
+.ap-page .ap-switch-knob::after { width: 12px; height: 12px; }
+.ap-page .ap-switch.is-on .ap-switch-knob::after { transform: translateX(12px); }
+.ap-page .ap-actions { gap: 4px; }
+.ap-page .ap-actions .btn { padding: 3px 9px; font-size: 12px; border-width: 1px; }
 
 /* Photos panel: gallery in product-page order, then the upload drop zone */
 .ap-gallery {
@@ -2764,3 +2782,76 @@ a.dash-list-main:hover .order-id { color: var(--red-text); }
 .pd-features ul { display: grid; gap: 8px; list-style: none; }
 .pd-features li { position: relative; padding-left: 26px; color: #e6e6e6; font-size: 14px; line-height: 1.5; }
 .pd-features li::before { content: "✓"; position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 18px; height: 18px; background: rgba(209, 0, 0, 0.18); border-radius: 50%; color: var(--red-text); font-size: 11px; font-weight: 800; }
+
+/* MOTION: intro splash, page-to-page transitions, hero entrance and scroll reveals.
+   All of it is skipped for people who turn off motion in their system settings */
+:root { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-in-out: cubic-bezier(0.7, 0, 0.2, 1); --intro-delay: 0s; }
+.intro-screen { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+    /* Loading screen (every homepage visit; header.php adds .has-intro): the logo powers on, a red bar loads,
+       then the screen wipes up to show the page. Pure CSS, so it still leaves if main.js fails to load */
+    .has-intro { --intro-delay: 1.45s; } /* the hero waits for the wipe */
+    .has-intro .intro-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at 50% 45%, #1f0000 0%, var(--black) 62%);
+        cursor: pointer;
+        animation: intro-wipe 0.7s var(--ease-in-out) 1.35s forwards;
+    }
+    .has-intro.intro-skip { --intro-delay: 0s; } /* clicked to skip: the splash fades and the hero comes straight in */
+    .has-intro.intro-skip .intro-screen { animation: intro-fade 0.3s ease forwards; }
+    /* Finished: hidden rather than removed, so coming Back to the page can play it again (main.js) */
+    .has-intro.intro-done .intro-screen { display: none; }
+    .intro-inner { display: flex; flex-direction: column; align-items: center; gap: 22px; animation: intro-lift 0.7s var(--ease-in-out) 1.35s forwards; }
+    .intro-logo { width: min(230px, 58vw); height: auto; animation: intro-logo 1s var(--ease-out) both; }
+    .intro-bar { width: 180px; height: 2px; background: #222; border-radius: 2px; overflow: hidden; }
+    .intro-bar span { display: block; height: 100%; background: var(--red); box-shadow: 0 0 12px var(--red); transform-origin: left; animation: intro-bar 1s cubic-bezier(0.65, 0, 0.35, 1) 0.25s both; }
+    .intro-tag { padding-left: 6px; color: var(--muted); font-family: 'Michroma', sans-serif; font-size: 11px; letter-spacing: 6px; text-transform: uppercase; animation: intro-tag 0.9s var(--ease-out) 0.45s both; }
+
+    @keyframes intro-logo { from { opacity: 0; transform: scale(0.88); filter: blur(12px) brightness(2); } }
+    @keyframes intro-bar  { from { transform: scaleX(0); } }
+    @keyframes intro-tag  { from { opacity: 0; transform: translateY(6px); } }
+    @keyframes intro-lift { to { opacity: 0; transform: translateY(-40px); } }
+    @keyframes intro-wipe { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 0 100% 0); visibility: hidden; } }
+    @keyframes intro-fade { to { opacity: 0; visibility: hidden; } }
+
+    /* Page-to-page: the header stays put while the page underneath cross-fades
+       (browsers without cross-page view transitions just get the content rising in below) */
+    @view-transition { navigation: auto; }
+    .site-header { view-transition-name: site-header; }
+    .has-intro:not(.intro-done) .site-header { view-transition-name: none; } /* or it would sit on top of the loading screen */
+    ::view-transition-old(root) { animation: vt-out 0.2s ease-in both; }
+    ::view-transition-new(root) { animation: vt-in 0.35s var(--ease-out) both; }
+    @keyframes vt-out { to { opacity: 0; } }
+    @keyframes vt-in { from { opacity: 0; } }
+
+    body.site > main { animation: rise-in 0.6s var(--ease-out) backwards; }
+
+    /* Hero entrance: the store photo settles in while the text comes up line by line.
+       "backwards" (not "both") so nothing keeps a transform once it's done */
+    .hero::before { animation: hero-photo 1.8s var(--ease-out) var(--intro-delay) backwards; }
+    .hero-content { animation: rise-in 0.9s var(--ease-out) var(--intro-delay) backwards; }
+    :is(.hero-content, .page-hero) > * { animation: rise-in 0.8s var(--ease-out) backwards; animation-delay: calc(var(--intro-delay) + 0.12s + var(--step, 0) * 0.09s); }
+    :is(.hero-content, .page-hero) > :nth-child(2) { --step: 1; }
+    :is(.hero-content, .page-hero) > :nth-child(3) { --step: 2; }
+    :is(.hero-content, .page-hero) > :nth-child(4) { --step: 3; }
+    :is(.hero-content, .page-hero) > :nth-child(n+5) { --step: 4; }
+
+    @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } }
+    @keyframes hero-photo { from { opacity: 0.3; transform: scale(1.12); } }
+
+    /* Scroll reveal: main.js tags cards and headings below the fold with .reveal, then adds .is-visible
+       as each one scrolls into view (and takes both classes off again afterwards so hover effects are untouched) */
+    body.site .reveal { opacity: 0; translate: 0 28px; }
+    body.site .reveal.is-visible { opacity: 1; translate: none; transition: opacity 0.7s var(--ease-out), translate 0.7s var(--ease-out); } /* only on the way in, so tagging hides instantly */
+}
+
+/* Printing (e.g. a receipt) shows everything as it is, whatever has or hasn't scrolled into view */
+@media print {
+    .intro-screen { display: none !important; }
+    body.site .reveal { opacity: 1 !important; translate: none !important; }
+}

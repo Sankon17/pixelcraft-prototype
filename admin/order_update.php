@@ -25,8 +25,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !hash_equals($_SESSION['csrf'] ?? '
 } elseif (!isset($labels[$status])) {
     $_SESSION['flash'] = ['type' => 'error', 'message' => 'Please choose a valid status for a ' . $delivery . ' order.'];
 } else {
-    $pdo->prepare('UPDATE orders SET status = ? WHERE id = ?')->execute([$status, $id]);
-    $_SESSION['flash'] = ['type' => 'success', 'message' => 'Order ' . order_number($id) . ' is now ' . $labels[$status] . '.'];
+    // Cancelling puts the items back in stock; un-cancelling takes them again (includes/orders.php)
+    $result = set_order_status($pdo, $id, $status);
+    $units  = fn(int $n) => $n . ' item' . ($n === 1 ? '' : 's');
+    if (isset($result['short'])) {
+        $_SESSION['flash'] = ['type' => 'error', 'message' => 'Order ' . order_number($id) . ' is still Cancelled: '
+            . implode('; ', $result['short']) . '. Restock first, then change the status.'];
+    } else {
+        $_SESSION['flash'] = ['type' => 'success', 'message' => 'Order ' . order_number($id) . ' is now ' . $labels[$status] . '.'
+            . ($result['restocked'] ? ' ' . $units($result['restocked']) . ' back in stock.' : '')
+            . ($result['taken'] ? ' ' . $units($result['taken']) . ' taken from stock again.' : '')];
+    }
 }
 
 header('Location: orders.php');

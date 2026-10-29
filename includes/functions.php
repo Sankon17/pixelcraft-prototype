@@ -110,7 +110,9 @@ function product_image(array $product, string $base, string $class = 'product-im
     if ($src) {
         return '<div class="' . $class . '"><img src="' . e($src) . '" alt="' . e($product['name']) . '" loading="lazy"></div>';
     }
-    return '<div class="' . $class . ' is-icon">' . category_icon($product['category_slug'] ?? '') . '</div>';
+    // No photo yet: the category's icon, and say so
+    return '<div class="' . $class . ' is-icon"><span class="img-ph-icon">' . category_icon($product['category_slug'] ?? '') . '</span>'
+        . '<span class="img-ph-text">Image unavailable</span></div>';
 }
 
 // Official contact channels (from pixelcrafthq.com).
