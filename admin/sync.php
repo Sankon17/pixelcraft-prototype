@@ -22,6 +22,12 @@ admin_open('Price Sync', 'sync');
         </div>
     </header>
 
+    <style>
+      .sync-log a.sync-link { color: inherit; text-decoration: none; border-bottom: 2px solid currentColor; }
+        .sync-log a.sync-link::after { content: ""; font-size: .8em; opacity: .6; }
+        .sync-log a.sync-link:hover { color: #ff4d4d; border-bottom-style: solid; }
+    </style>
+
     <form id="syncForm" action="sync_handler.php" method="POST">
         <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
         <button type="submit" id="syncBtn" class="btn">Sync from Google Sheets</button>
@@ -93,7 +99,18 @@ admin_open('Price Sync', 'sync');
                 const tr = body.insertRow();
                 tr.className = 'is-' + e.status + (e.changed ? ' is-changed' : '');
                 cell(tr, e.row);
-                const name = cell(tr, e.name || '(blank)');
+                 // A name that matches a product links to it in Products (new tab, so these results stay on screen)
+                const name = cell(tr, e.pid ? '' : (e.name || '(blank)'));
+                if (e.pid) {
+                    const a = document.createElement('a');
+                    a.href = 'products.php?edit=' + Number(e.pid) + '#' + (['edit', 'variants', 'options'].includes(e.section) ? e.section : 'edit');
+                    a.textContent = e.name;
+                    a.className = 'sync-link';
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.title = 'Open this product in Products';
+                    name.appendChild(a);
+                }
                 if (e.reason) {
                     const small = document.createElement('small');
                     small.textContent = e.reason;

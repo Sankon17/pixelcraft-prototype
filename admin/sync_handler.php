@@ -127,6 +127,8 @@ try {
 
     // Every variant, grouped by key (a key can hold more than one row, e.g. colour options)
     $variants = [];
+        // Products whose variants are accessory-style options (Colour, Fabric …): edited in the Options section
+    $option_products = array_flip($pdo->query('SELECT DISTINCT product_id FROM product_variants WHERE option_values IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN));
     foreach ($pdo->query('SELECT id, product_id, ram, storage, set_type, gpu_variant, price FROM product_variants') as $v) {
         $variants[variant_key((int)$v['product_id'], $v['ram'], $v['storage'], $v['set_type'], $v['gpu_variant'])][] = $v;
     }
@@ -164,7 +166,7 @@ try {
             continue;
         }
 
-        $entry = ['row' => $i + 1, 'name' => $name, 'old' => null, 'new' => $price];
+                $entry = ['row' => $i + 1, 'name' => $name, 'old' => null, 'new' => $price, 'pid' => null, 'section' => null];
 
         if ($name === '' || $price === null || $price <= 0) {
             $entry += ['status' => 'skipped', 'reason' => 'Missing name or price'];
@@ -174,6 +176,12 @@ try {
             $found = $by_name[mb_strtolower($name)] ?? [];
             if (!$found && count($by_words[word_key($name)] ?? []) === 1) {
                 $found = $by_words[word_key($name)];
+            }
+            if ($found) {
+                $entry['pid'] = (int)$found[0]['id'];
+                $entry['section'] = $found[0]['variant_count'] > 0
+                    ? (isset($option_products[$entry['pid']]) ? 'options' : 'variants')
+                    : 'edit';
             }
             if (!$found) {
                 $entry += ['status' => 'not_found', 'reason' => 'No PC variant or product with this name'];
@@ -194,6 +202,8 @@ try {
             $entry += ['status' => 'not_found', 'reason' => 'No PC called "' . $parsed['key'] . '" with variants'];
         } else {
             $pid = $products[$parsed['key']];
+            $entry['pid'] = $pid;
+            $entry['section'] = 'variants';
             $matches = $variants[variant_key($pid, $parsed['ram'], $parsed['storage'], $parsed['set_type'], $parsed['gpu'])] ?? [];
             if (!$matches) {
                 $entry += ['status' => 'not_found', 'reason' => 'No matching RAM / SSD / set / GPU option for this PC'];
